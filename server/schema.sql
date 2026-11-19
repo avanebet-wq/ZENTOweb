@@ -62,14 +62,29 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_created ON events (created_at);
 
--- Покупатели. Почта хранится в нижнем регистре; пароль — только в виде scrypt-хеша.
+-- Покупатели (аккаунты). Вход по нику или почте. Ник показываем как ввёл, сравниваем по nick_lower.
+-- Почта необязательна, в нижнем регистре. Пароль — только в виде scrypt-хеша.
+-- phone — старые данные до договора 2 (новые аккаунты его не получают, NULL допускается).
+-- Если таблица создана по старой схеме, её пересобирает store._migrate_users().
 CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY,
-    name          TEXT NOT NULL,
-    phone         TEXT NOT NULL UNIQUE,
-    email         TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    created_at    TEXT NOT NULL
+    id                INTEGER PRIMARY KEY,
+    nick              TEXT NOT NULL,
+    nick_lower        TEXT NOT NULL UNIQUE,
+    email             TEXT UNIQUE,
+    password_hash     TEXT NOT NULL,
+    phone             TEXT UNIQUE,
+    created_at        TEXT NOT NULL,
+    rules_accepted_at TEXT NOT NULL
+);
+
+-- Коды восстановления пароля: один код на пользователя (новый заменяет старый). Только хеш.
+CREATE TABLE IF NOT EXISTS reset_codes (
+    user_id    INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    code_hash  TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    used_at    TEXT
 );
 
 -- Сессии: в базе только SHA-256 от токена из cookie.

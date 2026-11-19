@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import auth
 import captcha
+import mailer
 import store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -63,7 +64,10 @@ DEFAULT_AUTH_LIMITS = {
     "login_ip": (20, 15 * 60),         # неудачных входов с одного IP за 15 минут
     "captcha_new": (30, 10 * 60),      # новых заданий капчи с IP за 10 минут
     "captcha_verify": (20, 10 * 60),   # проверок капчи с IP за 10 минут
+    "reset_request": (5, 15 * 60),     # запросов кода восстановления с IP за 15 минут
 }
+
+RESET_MESSAGE = "Если аккаунт найден, код отправлен на почту"
 
 # Ответы для /api/auth/* и /api/captcha/*: код, статус и текст по умолчанию.
 AUTH_ERRORS = {
@@ -75,11 +79,17 @@ AUTH_ERRORS = {
     "captcha_wrong": (400, "Части стоят не на своих местах. Попробуйте ещё раз"),
     "captcha_expired": (410, "Проверка устарела. Начните заново"),
     "captcha_unavailable": (503, "Проверка временно недоступна"),
-    "already_registered": (409, "Такой покупатель уже зарегистрирован"),
+    "rules_not_accepted": (400, "Примите правила сервиса, чтобы создать аккаунт"),
+    "nick_taken": (409, "Этот ник уже занят"),
+    "email_taken": (409, "Эта почта уже зарегистрирована"),
     "invalid_credentials": (401, "Неверный логин или пароль"),
     "too_many_attempts": (429, "Слишком много попыток. Попробуйте позже"),
     "too_many_requests": (429, "Слишком много запросов. Попробуйте позже"),
     "login_required": (401, "Войдите, чтобы продолжить"),
+    "code_invalid": (400, "Неверный код. Проверьте письмо и попробуйте снова"),
+    "code_expired": (400, "Срок действия кода истёк. Запросите новый"),
+    "code_attempts_exceeded": (429, "Слишком много неверных попыток. Запросите новый код"),
+    "mail_failed": (503, "Не удалось отправить письмо. Попробуйте позже"),
 }
 
 # Эти папки никогда не отдаются как статика (сравнение без учёта регистра).
@@ -509,7 +519,7 @@ def _hit_auth(handler, name, code):
 
 
 def _public_user(user):
-    return {"id": user["id"], "name": user["name"], "phone": user["phone"], "email": user["email"]}
+    return {"id": user["id"], "nick": user["nick"], "email": user["email"]}
 
 
 def _login_key(login, identity, user):
@@ -536,6 +546,8 @@ def _auth_register(handler, params, query):
     _hit_auth(handler, "register", "too_many_requests")
     payload = _auth_json(handler)
     data = _clean(store.clean_registration, payload)
+    if payload.get("agree") is not True:
+        raise _auth_error("rules_not_accepted")
     password_hash = auth.hash_password(data.pop("password"))
     token = auth.new_token()
     user = _run_auth(handler, store.register_user, data, payload.get("captcha_ticket"),
@@ -583,6 +595,42 @@ def _auth_logout(handler, params, query):
     return 200, {"ok": True}, [("Set-Cookie", auth.expired_session_cookie(handler.server.cookie_secure))]
 
 
+def _log_mail_failure(exc):
+    # В лог — только тип ошибки: ни адреса, ни ключа, ни кода.
+    print(f"Письмо для восстановления пароля не отправлено: {type(exc).__name__}", file=sys.stderr)
+
+
+def _auth_reset_request(handler, params, query):
+    _hit_auth(handler, "reset_request", "too_many_requests")
+    login = _clean(store.clean_reset_request, _auth_json(handler))
+    # Проверку настроек делаем до поиска аккаунта: 503 не зависит от того, есть ли такой покупатель.
+    if not mailer.is_configured():
+        raise _auth_error("mail_failed")
+    user = _run_auth(handler, store.find_user_by_login, login)
+    if user is not None and user["email"]:
+        code = auth.new_reset_code()
+        stamp = _run_auth(handler, store.reset_begin, user["id"], auth.hash_password(code), store.utc_now())
+        # stamp is None — код уже выслан меньше минуты назад: письмо повторно не шлём, ответ тот же.
+        if stamp is not None:
+            try:
+                mailer.send_reset_code(user["email"], code)
+            except mailer.MailError as exc:
+                _log_mail_failure(exc)
+                _run_auth(handler, store.reset_cancel, user["id"], stamp)
+                raise _auth_error("mail_failed") from None
+    return 200, {"ok": True, "message": RESET_MESSAGE}
+
+
+def _auth_reset_confirm(handler, params, query):
+    payload = _auth_json(handler)
+    login, code = _clean(store.clean_reset_confirm, payload)
+    token = auth.new_token()
+    user = _run_auth(handler, store.reset_confirm, login, code, payload.get("password"),
+                     payload.get("password2"), auth.token_hash(token), store.utc_now())
+    cookie = auth.session_cookie(token, handler.server.cookie_secure)
+    return 200, {"ok": True, "user": _public_user(user)}, [("Set-Cookie", cookie)]
+
+
 def _captcha_new(handler, params, query):
     _hit_auth(handler, "captcha_new", "too_many_requests")
     images = handler.server.captcha_images
@@ -619,6 +667,8 @@ ROUTES = [
     ("POST", re.compile(r"^/api/auth/register$"), _auth_register),
     ("POST", re.compile(r"^/api/auth/login$"), _auth_login),
     ("POST", re.compile(r"^/api/auth/logout$"), _auth_logout),
+    ("POST", re.compile(r"^/api/auth/reset/request$"), _auth_reset_request),
+    ("POST", re.compile(r"^/api/auth/reset/confirm$"), _auth_reset_confirm),
     ("GET", re.compile(r"^/api/captcha/new$"), _captcha_new),
     ("POST", re.compile(r"^/api/captcha/verify$"), _captcha_verify),
     ("GET", re.compile(r"^/api/products$"), _products_list),
@@ -921,6 +971,8 @@ def main(argv=None) -> int:
         print(f"Сервер не запущен: {exc}", file=sys.stderr)
         return 1
 
+    if not mailer.is_configured():
+        print("Почта не настроена (BREVO_API_KEY, MAIL_FROM): восстановление пароля вернёт 503.", file=sys.stderr)
     if not captcha.is_available(server.captcha_images):
         print(f"Капча недоступна: нужно не меньше {captcha.MIN_IMAGES} картинок в assets/captcha "
               f"(найдено {len(server.captcha_images)}).", file=sys.stderr)

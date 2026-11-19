@@ -38,8 +38,8 @@ COMMON_PASSWORDS = frozenset({
 
 # ---------------------------------------------------------------- пароль
 
-def password_error(password, email=""):
-    """Текст ошибки для пароля или None, если пароль подходит."""
+def password_error(password, nick=""):
+    """Текст ошибки для пароля или None, если пароль подходит. Пароль не должен содержать ник."""
     if not isinstance(password, str) or not password:
         return "Укажите пароль"
     if len(password) < PASSWORD_MIN_LENGTH:
@@ -54,11 +54,14 @@ def password_error(password, email=""):
         return "Нужны и буквы, и цифры"
     if password.casefold() in COMMON_PASSWORDS:
         return "Этот пароль слишком простой, придумайте другой"
-    local = email.split("@", 1)[0].casefold() if "@" in email else ""
-    # Часть почты короче трёх символов не проверяем: иначе любой пароль с «a» будет отклонён.
-    if len(local) >= 3 and local in password.casefold():
-        return "Пароль не должен повторять часть почты"
+    if nick and nick.casefold() in password.casefold():
+        return "Пароль не должен содержать ник"
     return None
+
+
+def new_reset_code() -> str:
+    """Шестизначный код для письма восстановления пароля (с ведущими нулями)."""
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
 def hash_password(password: str) -> str:
