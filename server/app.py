@@ -615,9 +615,9 @@ def _auth_reset_request(handler, params, query):
             try:
                 mailer.send_reset_code(user["email"], code)
             except mailer.MailError as exc:
+                # Сбой Brevo не должен отличаться от «аккаунта нет»: ответ тот же, код гасим.
                 _log_mail_failure(exc)
                 _run_auth(handler, store.reset_cancel, user["id"], stamp)
-                raise _auth_error("mail_failed") from None
     return 200, {"ok": True, "message": RESET_MESSAGE}
 
 

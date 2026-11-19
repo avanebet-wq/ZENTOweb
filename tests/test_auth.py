@@ -851,15 +851,24 @@ class ResetTest(AuthServerBase):
         self.send.assert_not_called()
         self.assertEqual(self.reset_rows(), [])
 
-    def test_mail_failure_is_503_and_next_try_is_allowed_at_once(self):
+    def test_brevo_failure_answers_like_unknown_account(self):
+        # Сбой Brevo не выдаёт, что аккаунт есть: ответ тот же, что для несуществующего логина.
         self.send.side_effect = mailer.MailError("почта недоступна")
-        self.assert_error(self.ask("anna_petrova"), 503, "mail_failed")
-        self.assertEqual(self.reset_rows(), [])
+        failed = self.ask("anna_petrova")
+        self.assertEqual(failed.status, 200)
+        self.assertEqual(failed.body, self.ask("nobody_here_1").body)
+        self.assertEqual(self.reset_rows(), [])          # неотправленный код гасится
         self.send.side_effect = None
         self.assertEqual(self.ask("anna_petrova").status, 200)
-        self.assertEqual(self.send.call_count, 2)
+        self.assertEqual(self.send.call_count, 2)        # повторить можно сразу
 
-    def test_mail_failure_does_not_leak_key_or_address_into_answer_or_logs(self):
+    def test_brevo_failure_gives_same_answer_for_every_login(self):
+        self.send.side_effect = mailer.MailError("почта недоступна")
+        answers = {self.ask(login).raw for login in ["anna_petrova", "anna.petrova@example.com",
+                                                     "nobody_here_1", "nobody@example.com", "hello world"]}
+        self.assertEqual(len(answers), 1)
+
+    def test_brevo_failure_does_not_leak_key_or_address_into_answer_or_logs(self):
         # Здесь настоящая отправка: мок снимаем и подменяем только сетевой вызов Brevo.
         self.send_patcher.stop()
         out, err = io.StringIO(), io.StringIO()
@@ -867,11 +876,12 @@ class ResetTest(AuthServerBase):
         with mock.patch.dict(os.environ, MAIL_ENV), mock.patch("urllib.request.urlopen", side_effect=failing):
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 resp = self.ask("anna_petrova")
-        self.assert_error(resp, 503, "mail_failed")
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body, self.ask("nobody_here_1").body)
         text = resp.raw.decode("utf-8") + out.getvalue() + err.getvalue()
         self.assertNotIn(BREVO_KEY, text)
         self.assertNotIn("anna.petrova@example.com", text)
-        self.assertIn("MailError", err.getvalue())
+        self.assertIn("MailError", err.getvalue())       # в лог попадает только тип ошибки
 
     # --- подтверждение
     def test_correct_code_sets_new_password_and_logs_in(self):
