@@ -562,13 +562,16 @@
     renderGrid();
     renderBadge();
     renderCart();
-    el('demo-note').hidden = apiOnline;
   }
 
   /* ----- Данные и события ----- */
   function getJSON(url) {
     return fetch(url, { headers: { Accept: 'application/json' } }).then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        var err = new Error('HTTP ' + res.status);
+        err.status = res.status;
+        throw err;
+      }
       return res.json();
     }).then(function (data) {
       if (!Array.isArray(data)) throw new Error('bad data');
@@ -576,12 +579,9 @@
     });
   }
 
-  // Сначала сервер; если его нет (например, GitHub Pages), берём товары из файла
+  // Товары только с сервера и только после входа (без входа их не запрашиваем)
   function loadProducts() {
-    return getJSON('/api/products')
-      .then(function (list) { apiOnline = true; return list; })
-      .catch(function () { return getJSON('data/products.json'); })
-      .catch(function () { return null; });
+    return getJSON('/api/products').then(function (list) { apiOnline = true; return list; });
   }
 
   // Просмотры: ошибки игнорируем, а без сервера не отправляем вовсе
@@ -628,10 +628,20 @@
     });
     el('order-form').addEventListener('submit', onOrderSubmit);
     renderBadge();
-    renderSkeleton();
 
+    // Товары грузятся только после входа: auth.js сообщает состояние событием zento:session
+    document.addEventListener('zento:session', function (e) {
+      var state = e.detail && e.detail.state;
+      if (state === 'in') enterShop(); else leaveShop();
+    });
+  }
+
+  // Вошли: показываем заглушки и грузим товары с сервера
+  function enterShop() {
+    loadFailed = false;
+    renderSkeleton();
     loadProducts().then(function (list) {
-      if (list) products = list; else loadFailed = true;
+      products = list;
       byId = {};
       products.forEach(function (p) { byId[String(p.id)] = p; });
       // Убираем из корзины то, чего больше нет, и не даём количеству превышать остаток
@@ -644,7 +654,30 @@
       writeCart();
       renderAll();
       track('view');
+    }, function (err) {
+      // Сессия кончилась: попросим экран входа, товары не показываем
+      if (err && err.status === 401) {
+        document.dispatchEvent(new CustomEvent('zento:need-login'));
+        return;
+      }
+      products = [];
+      byId = {};
+      loadFailed = true;
+      renderAll();
     });
+  }
+
+  // Выход или сайт недоступен: убираем товары из памяти и с экрана, закрываем окна товара и корзины
+  function leaveShop() {
+    products = [];
+    byId = {};
+    apiOnline = false;
+    loadFailed = false;
+    ['product-dialog', 'cart-dialog'].forEach(function (id) {
+      var d = el(id);
+      if (d.open) d.close();
+    });
+    renderAll();
   }
 
   /* ================= АДМИНКА ================= */
