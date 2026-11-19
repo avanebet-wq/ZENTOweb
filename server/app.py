@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import auth
 import captcha
+import images
 import mailer
 import store
 
@@ -41,6 +42,11 @@ DEFAULT_PRODUCTS = ROOT / "data" / "products.json"
 MAX_BODY_BYTES = 64 * 1024
 # Тело больше лимита (но не больше 1 МБ) читаем и выбрасываем, чтобы клиент получил ответ 413, а не обрыв связи.
 DISCARD_LIMIT_BYTES = 1024 * 1024
+# Загрузка картинки профиля: тело читаем целиком до 4 МБ (больше лимита баннера — 413 без чтения).
+# Порог «читать и выбросить» поднят только для этих маршрутов, чтобы клиент получал 413, а не обрыв.
+IMAGE_UPLOAD_PATHS = frozenset({"/api/profile/avatar", "/api/profile/banner"})
+IMAGE_DISCARD_LIMIT_BYTES = 8 * 1024 * 1024
+IMAGE_CACHE_CONTROL = "public, max-age=3600"
 
 HANDLER_TIMEOUT_SECONDS = 10       # висящие соединения закрываются через 10 секунд
 
@@ -65,6 +71,8 @@ DEFAULT_AUTH_LIMITS = {
     "captcha_new": (30, 10 * 60),      # новых заданий капчи с IP за 10 минут
     "captcha_verify": (20, 10 * 60),   # проверок капчи с IP за 10 минут
     "reset_request": (5, 15 * 60),     # запросов кода восстановления с IP за 15 минут
+    "profile_patch": (30, 60 * 60),    # сохранений описания и ника на одного покупателя за час
+    "image_upload": (10, 60 * 60),     # загрузок картинок (аватар или баннер) на одного покупателя за час
 }
 
 RESET_MESSAGE = "Если аккаунт найден, код отправлен на почту"
@@ -90,6 +98,12 @@ AUTH_ERRORS = {
     "code_expired": (400, "Срок действия кода истёк. Запросите новый"),
     "code_attempts_exceeded": (429, "Слишком много неверных попыток. Запросите новый код"),
     "mail_failed": (503, "Не удалось отправить письмо. Попробуйте позже"),
+    "nick_invalid": (400, "Такой ник нельзя использовать"),
+    "nick_cooldown": (409, "Ник пока нельзя менять"),
+    "avatar_too_large": (413, "Аватар больше 2 МБ. Выберите картинку поменьше"),
+    "banner_too_large": (413, "Баннер больше 4 МБ. Выберите картинку поменьше"),
+    "image_type_unsupported": (415, "Подходят только картинки PNG, JPEG и WEBP"),
+    "image_invalid": (400, "Картинка повреждена или слишком большая"),
 }
 
 # Эти папки никогда не отдаются как статика (сравнение без учёта регистра).
@@ -138,6 +152,15 @@ class FileResponse:
         self.data = data
         self.filename = filename
         self.content_type = content_type
+
+
+class ImageResponse:
+    """Картинка профиля: байты, Content-Type из базы и ETag (sha256)."""
+
+    def __init__(self, data, content_type, sha256):
+        self.data = data
+        self.content_type = content_type
+        self.sha256 = sha256
 
 
 class ApiError(Exception):
@@ -451,6 +474,108 @@ def _admin_backup(handler, params, query):
     return 200, FileResponse(data, f"zento-backup-{stamp}.db")
 
 
+# ---------------------------------------------------------------- профиль покупателя
+
+def _session_user(handler):
+    """Пользователь по cookie-сессии. Токен бота и админский токен сюда не пускают: без сессии — 401."""
+    token = auth.read_session_token(handler.headers.get("Cookie"))
+    user = None
+    if token is not None:
+        user = _run_auth(handler, store.user_for_session, auth.token_hash(token), store.utc_now())
+    if user is None:
+        raise _auth_error("login_required", message="Войдите, чтобы редактировать профиль")
+    return user
+
+
+def _hit_user(handler, bucket, user_id):
+    """Лимит на одного покупателя (не на IP) по DEFAULT_AUTH_LIMITS. Исчерпан — 429."""
+    limit, window = handler.server.auth_limits[bucket]
+    key = f"user:{user_id}"
+    limiter = handler.server.limiter
+    if not limiter.try_hit(bucket, key, limit, window):
+        retry = limiter.retry_after(bucket, key, window)
+        raise _auth_error("too_many_requests", headers=[("Retry-After", str(retry))])
+
+
+def _profile_me(handler, params, query):
+    user = _session_user(handler)
+    return 200, {"ok": True, "user": _run_auth(handler, store.own_profile, user["id"], store.utc_now())}
+
+
+def _profile_patch(handler, params, query):
+    user = _session_user(handler)
+    _hit_user(handler, "profile_patch", user["id"])
+    payload = _auth_json(handler)
+    profile = _run_auth(handler, store.update_profile, user["id"], payload, store.utc_now())
+    return 200, {"ok": True, "user": profile}
+
+
+def _profile_put_image(handler, kind):
+    user = _session_user(handler)
+    _hit_user(handler, "image_upload", user["id"])
+    header = images.header_type(handler.headers.get("Content-Type"))
+    if header is None:
+        raise _auth_error("image_type_unsupported")
+    state = handler._body_state
+    if state == "no-length":
+        raise ApiError(411, {"error": "length required"})
+    if state == "bad-length":
+        raise ApiError(400, {"error": "bad content-length"})
+    if state == "too-large" or len(handler._body) > images.MAX_BYTES[kind]:
+        raise _auth_error(f"{kind}_too_large")
+    try:
+        meta = images.inspect(handler._body, header, kind)
+    except images.ImageError as exc:
+        raise _auth_error(exc.code, exc.fields, exc.message) from None
+    # Тело уже прочитано: база блокируется только на время записи.
+    profile = _run_auth(handler, store.save_image, user["id"], kind, handler._body, meta, store.utc_now())
+    return 200, {"ok": True, "user": profile}
+
+
+def _profile_delete_image(handler, kind):
+    user = _session_user(handler)
+    profile = _run_auth(handler, store.delete_image, user["id"], kind, store.utc_now())
+    return 200, {"ok": True, "user": profile}
+
+
+def _profile_put_avatar(handler, params, query):
+    return _profile_put_image(handler, "avatar")
+
+
+def _profile_put_banner(handler, params, query):
+    return _profile_put_image(handler, "banner")
+
+
+def _profile_delete_avatar(handler, params, query):
+    return _profile_delete_image(handler, "avatar")
+
+
+def _profile_delete_banner(handler, params, query):
+    return _profile_delete_image(handler, "banner")
+
+
+def _user_profile(handler, params, query):
+    profile = _run(handler, store.public_profile, params["nick"].lower())
+    if profile is None:
+        raise ApiError(404, {"error": "not found"})
+    return 200, {"ok": True, "user": profile}
+
+
+def _user_image(handler, params, kind):
+    found = _run(handler, store.get_image, params["nick"].lower(), kind)
+    if found is None:
+        raise ApiError(404, {"error": "not found"})
+    return 200, ImageResponse(found["data"], found["content_type"], found["sha256"])
+
+
+def _user_avatar(handler, params, query):
+    return _user_image(handler, params, "avatar")
+
+
+def _user_banner(handler, params, query):
+    return _user_image(handler, params, "banner")
+
+
 # ---------------------------------------------------------------- вход, регистрация, капча
 
 def _auth_error(code, fields=None, message=None, headers=()):
@@ -684,10 +809,26 @@ ROUTES = [
     ("POST", re.compile(r"^/api/admin/products$"), _admin_product_create),
     ("PATCH", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_patch),
     ("GET", re.compile(r"^/api/admin/backup$"), _admin_backup),
+    ("GET", re.compile(r"^/api/profile/me$"), _profile_me),
+    ("PATCH", re.compile(r"^/api/profile$"), _profile_patch),
+    ("PUT", re.compile(r"^/api/profile/avatar$"), _profile_put_avatar),
+    ("PUT", re.compile(r"^/api/profile/banner$"), _profile_put_banner),
+    ("DELETE", re.compile(r"^/api/profile/avatar$"), _profile_delete_avatar),
+    ("DELETE", re.compile(r"^/api/profile/banner$"), _profile_delete_banner),
+    ("GET", re.compile(r"^/api/users/(?P<nick>[^/]+)/profile$"), _user_profile),
+    ("GET", re.compile(r"^/api/users/(?P<nick>[^/]+)/avatar$"), _user_avatar),
+    ("GET", re.compile(r"^/api/users/(?P<nick>[^/]+)/banner$"), _user_banner),
 ]
 
 
 # ---------------------------------------------------------------- HTTP
+
+def _body_limits(method, path):
+    """Сколько байт тела читать и до какого размера выбрасывать. Для картинок профиля порог выше."""
+    if method == "PUT" and path in IMAGE_UPLOAD_PATHS:
+        return images.BANNER_MAX_BYTES, IMAGE_DISCARD_LIMIT_BYTES
+    return MAX_BODY_BYTES, DISCARD_LIMIT_BYTES
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ZENTO"
@@ -716,12 +857,15 @@ class Handler(BaseHTTPRequestHandler):
         query = {key: values[0] for key, values in parse_qs(parts.query).items()}
         try:
             # Тело читаем сразу, даже если маршрут откажет (например 503): иначе сокет закроется с непрочитанными данными.
-            self._prefetch_body()
+            read_limit, discard_limit = _body_limits(method, path)
+            self._prefetch_body(read_limit, discard_limit)
             if path == "/api" or path.startswith("/api/"):
                 status, body, *extra = self._route_api(method, path, query)
                 headers = extra[0] if extra else ()
                 if isinstance(body, FileResponse):
                     self._send_file(status, body, headers)
+                elif isinstance(body, ImageResponse):
+                    self._send_image(status, body, headers)
                 else:
                     self._send_json(status, body, headers)
             elif method == "GET":
@@ -787,8 +931,8 @@ class Handler(BaseHTTPRequestHandler):
             return "bot"
         return None
 
-    def _prefetch_body(self):
-        """Читает тело запроса один раз. Слишком большое тело не сохраняем."""
+    def _prefetch_body(self, read_limit=MAX_BODY_BYTES, discard_limit=DISCARD_LIMIT_BYTES):
+        """Читает тело запроса один раз. Тело больше read_limit не сохраняем; до discard_limit читаем и выбрасываем."""
         self._body = b""
         self._body_state = "ok"
         if self.headers.get("Transfer-Encoding"):
@@ -806,9 +950,9 @@ class Handler(BaseHTTPRequestHandler):
         if length < 0:
             self._body_state = "bad-length"
             return
-        if length > MAX_BODY_BYTES:
+        if length > read_limit:
             self._body_state = "too-large"
-            if length <= DISCARD_LIMIT_BYTES:
+            if length <= discard_limit:
                 self.rfile.read(length)
             else:
                 self.close_connection = True
@@ -860,6 +1004,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(file.data)
+
+    def _send_image(self, status, image, headers=()):
+        etag = f'"{image.sha256}"'
+        wanted = [item.strip() for item in self.headers.get("If-None-Match", "").split(",") if item.strip()]
+        if any(item in ("*", etag, f"W/{etag}") for item in wanted):
+            status = 304
+        self.send_response(status)
+        self._security_headers()
+        self.send_header("Cache-Control", IMAGE_CACHE_CONTROL)
+        self.send_header("ETag", etag)
+        for name, value in headers:
+            self.send_header(name, value)
+        if status == 304:
+            self.end_headers()
+            return
+        self.send_header("Content-Type", image.content_type)
+        self.send_header("Content-Length", str(len(image.data)))
+        self.end_headers()
+        self.wfile.write(image.data)
 
     def _send_static(self, path):
         found = resolve_static(self.server.static_root, path)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -57,6 +58,10 @@ PHONE_CHARS_RE = re.compile(r"^\+?[0-9 ()\-.]+$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Ник: 3–20 символов, латиница, кириллица, цифры и _. Пробелов нет.
 NICK_RE = re.compile(r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ0-9_]{3,20}")
+# Ник нельзя смешивать из латиницы и кириллицы: «аnna» с кириллической а выглядит как «anna».
+NICK_LATIN_RE = re.compile(r"[A-Za-z]")
+NICK_CYRILLIC_RE = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]")
+NICK_RESERVED = frozenset({"admin", "zento", "support", "bot", "administrator", "root", "moderator"})
 RESET_CODE_RE = re.compile(r"[0-9]{6}")
 RESET_CODE_TTL_SECONDS = 10 * 60      # код действует 10 минут
 RESET_RESEND_SECONDS = 60             # новый код можно запросить не раньше чем через минуту
@@ -161,6 +166,18 @@ def _migrate(conn) -> None:
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
     _migrate_users(conn)
+    # Профиль покупателя (описание и дата последней смены ника). Идемпотентно.
+    _add_missing_columns(conn, "users", {
+        "bio": "TEXT NOT NULL DEFAULT ''",
+        "nick_changed_at": "TEXT",
+    })
+
+
+def _add_missing_columns(conn, table, definitions) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for name, definition in definitions.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 # Та же структура, что в schema.sql. Нужна миграции, чтобы создать users_new.
@@ -172,7 +189,9 @@ USERS_TABLE_SQL = """CREATE TABLE {name} (
     password_hash     TEXT NOT NULL,
     phone             TEXT UNIQUE,
     created_at        TEXT NOT NULL,
-    rules_accepted_at TEXT NOT NULL
+    rules_accepted_at TEXT NOT NULL,
+    bio               TEXT NOT NULL DEFAULT '',
+    nick_changed_at   TEXT
 )"""
 
 
@@ -771,6 +790,10 @@ def clean_nick(value) -> str:
     text = value.strip()
     if not NICK_RE.fullmatch(text):
         raise ValueError("от 3 до 20 символов: буквы, цифры и знак _, без пробелов")
+    if NICK_LATIN_RE.search(text) and NICK_CYRILLIC_RE.search(text):
+        raise ValueError("нельзя смешивать латиницу и кириллицу в одном нике")
+    if text.lower() in NICK_RESERVED:
+        raise ValueError("этот ник нельзя использовать")
     return text
 
 
@@ -900,6 +923,7 @@ def purge_auth_expired(conn, now) -> None:
     conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (stamp,))
     conn.execute("DELETE FROM captcha_challenges WHERE expires_at <= ?", (stamp,))
     conn.execute("DELETE FROM captcha_tickets WHERE expires_at <= ?", (stamp,))
+    conn.execute("DELETE FROM nick_reservations WHERE reserved_until <= ?", (stamp,))
 
 
 def _public_user(row) -> dict:
@@ -980,6 +1004,11 @@ def register_user(conn, data, ticket, password_hash, session_hash, now) -> dict:
                 taken["nick"] = "Этот ник уже занят"
             if data["email"] is not None and found["email"] == data["email"]:
                 taken["email"] = "Эта почта уже зарегистрирована"
+        if conn.execute(
+            "SELECT 1 FROM nick_reservations WHERE nick_lower = ? AND reserved_until > ?",
+            (nick_lower, stamp),
+        ).fetchone() is not None:
+            taken["nick"] = "Этот ник уже занят"
         if taken:
             code = "nick_taken" if "nick" in taken else "email_taken"
             raise Rejected(code, fields=taken)
@@ -1108,3 +1137,203 @@ def captcha_verify(conn, challenge_id, placements, ticket_hash, now) -> str:
                 (ticket_hash, stamp, to_iso(now + timedelta(seconds=captcha.TICKET_TTL))),
             )
     return outcome
+
+
+# ---------------------------------------------------------------- профиль покупателя
+
+BIO_MAX_LEN = 300
+BIO_MAX_NEWLINES = 5
+BIO_FORBIDDEN_RE = re.compile(r"[<>]")
+# Управляющие символы, кроме перевода строки (переводы уже приведены к \n).
+BIO_CONTROL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+# Невидимые символы, которыми можно спрятать текст или подделать ник.
+BIO_INVISIBLE_RE = re.compile("[​-‏‪-‮⁦-⁩﻿]")
+NICK_COOLDOWN_DAYS = 30        # менять ник можно раз в 30 дней
+NICK_RESERVE_DAYS = 30         # старый ник держится 30 дней
+
+
+def clean_bio(value) -> str:
+    """Описание профиля: NFC, без пробелов по краям, до 300 символов, без < > и без управляющих
+    и невидимых символов, не больше 5 переносов строки. Пустая строка — описание очищено."""
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ValueError("описание — текст")
+    text = unicodedata.normalize("NFC", value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(text) > BIO_MAX_LEN:
+        raise ValueError(f"не больше {BIO_MAX_LEN} символов")
+    if BIO_FORBIDDEN_RE.search(text):
+        raise ValueError("символы < и > нельзя")
+    if BIO_CONTROL_RE.search(text) or BIO_INVISIBLE_RE.search(text):
+        raise ValueError("есть недопустимые символы")
+    if text.count("\n") > BIO_MAX_NEWLINES:
+        raise ValueError(f"не больше {BIO_MAX_NEWLINES} переносов строки")
+    return text
+
+
+def clean_profile(payload) -> dict:
+    """Поля профиля для PATCH: bio и/или nick. Лишние поля — ошибка. Ошибки — в fields."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Ожидается объект с полями bio или nick"})
+    errors, out = {}, {}
+    for key in payload:
+        if key not in ("bio", "nick"):
+            errors[key] = "неизвестное поле"
+    if "bio" in payload:
+        try:
+            out["bio"] = clean_bio(payload["bio"])
+        except ValueError as exc:
+            errors["bio"] = str(exc)
+    if "nick" in payload:
+        try:
+            out["nick"] = clean_nick(payload["nick"])
+        except ValueError as exc:
+            errors["nick"] = str(exc)
+    if errors:
+        raise ValidationError(errors)
+    return out
+
+
+def _kyiv_date(moment: datetime) -> str:
+    return moment.astimezone(KYIV_TZ).strftime("%d.%m.%Y")
+
+
+def _next_nick_change(changed_at, now):
+    """Когда можно сменить ник в следующий раз (ISO) или None, если уже можно."""
+    if not changed_at:
+        return None
+    available = parse_iso(changed_at) + timedelta(days=NICK_COOLDOWN_DAYS)
+    return to_iso(available) if available > now else None
+
+
+def _picture_fields(row) -> dict:
+    avatar, banner = row["avatar_sha"], row["banner_sha"]
+    return {
+        "has_avatar": avatar is not None,
+        "has_banner": banner is not None,
+        # Версия для ссылки на картинку (?v=...): меняется вместе с картинкой.
+        "avatar_v": avatar[:16] if avatar else None,
+        "banner_v": banner[:16] if banner else None,
+    }
+
+
+PROFILE_SELECT = (
+    "SELECT u.id, u.nick, u.email, u.bio, u.nick_changed_at,"
+    " (SELECT sha256 FROM user_images WHERE user_id = u.id AND kind = 'avatar') AS avatar_sha,"
+    " (SELECT sha256 FROM user_images WHERE user_id = u.id AND kind = 'banner') AS banner_sha"
+    " FROM users u WHERE "
+)
+
+
+def public_profile(conn, nick_lower):
+    """То, что видно по нику: ник, описание и есть ли картинки. Почты и id нет."""
+    row = conn.execute(PROFILE_SELECT + "u.nick_lower = ?", (nick_lower,)).fetchone()
+    if row is None:
+        return None
+    return {"nick": row["nick"], "bio": row["bio"], **_picture_fields(row)}
+
+
+def own_profile(conn, user_id, now):
+    """Своя страница: всё про профиль, включая почту и дату следующей смены ника."""
+    row = conn.execute(PROFILE_SELECT + "u.id = ?", (user_id,)).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "nick": row["nick"],
+        "email": row["email"],
+        "bio": row["bio"],
+        **_picture_fields(row),
+        "nick_next_change_at": _next_nick_change(row["nick_changed_at"], now),
+    }
+
+
+def _plan_nick_change(conn, user_id, me, nick, now) -> dict:
+    """Проверяет смену ника и резервирует старый. Возвращает колонки users для UPDATE.
+
+    Смена только регистра (anna -> Anna) кулдауна не имеет и срок смены не трогает.
+    Вызывать внутри transaction()."""
+    if nick.lower() == me["nick_lower"]:
+        return {"nick": nick} if nick != me["nick"] else {}
+    if _next_nick_change(me["nick_changed_at"], now) is not None:
+        available = parse_iso(me["nick_changed_at"]) + timedelta(days=NICK_COOLDOWN_DAYS)
+        raise Rejected("nick_cooldown", fields={
+            "nick": f"Ник можно поменять не раньше {_kyiv_date(available)}",
+        })
+    nick_lower = nick.lower()
+    stamp = to_iso(now)
+    taken = conn.execute("SELECT 1 FROM users WHERE nick_lower = ?", (nick_lower,)).fetchone()
+    reserved = conn.execute(
+        "SELECT 1 FROM nick_reservations WHERE nick_lower = ? AND user_id <> ? AND reserved_until > ?",
+        (nick_lower, user_id, stamp),
+    ).fetchone()
+    if taken is not None or reserved is not None:
+        raise Rejected("nick_taken", fields={"nick": "Этот ник уже занят"})
+    # Свою бронь на этот ник (или протухшую чужую) убираем, старый ник резервируем.
+    conn.execute("DELETE FROM nick_reservations WHERE nick_lower = ?", (nick_lower,))
+    conn.execute(
+        "INSERT OR REPLACE INTO nick_reservations (nick_lower, user_id, reserved_until) VALUES (?, ?, ?)",
+        (me["nick_lower"], user_id, to_iso(now + timedelta(days=NICK_RESERVE_DAYS))),
+    )
+    return {"nick": nick, "nick_lower": nick_lower, "nick_changed_at": stamp}
+
+
+def update_profile(conn, user_id, payload, now) -> dict:
+    """PATCH /api/profile: меняет описание и/или ник одной транзакцией. Ошибка любого поля ничего не меняет.
+
+    Ошибки формы: nick_invalid, если есть ошибка ника, иначе validation_error (оба — 400)."""
+    try:
+        data = clean_profile(payload)
+    except ValidationError as exc:
+        code = "nick_invalid" if "nick" in exc.fields else "validation_error"
+        raise Rejected(code, fields=exc.fields) from None
+    with transaction(conn):
+        me = conn.execute(
+            "SELECT nick, nick_lower, nick_changed_at FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if me is None:
+            raise NotFound()
+        changes = {}
+        if "bio" in data:
+            changes["bio"] = data["bio"]
+        if "nick" in data:
+            changes.update(_plan_nick_change(conn, user_id, me, data["nick"], now))
+        if changes:
+            # Имена колонок заданы только в этом коде, значения идут параметрами.
+            assignments = ", ".join(f"{column} = ?" for column in changes)
+            conn.execute(f"UPDATE users SET {assignments} WHERE id = ?", [*changes.values(), user_id])
+    return own_profile(conn, user_id, now)
+
+
+def get_image(conn, nick_lower, kind):
+    """Картинка покупателя по нику (в нижнем регистре) и виду. None, если её нет."""
+    row = conn.execute(
+        "SELECT i.content_type, i.data, i.sha256 FROM user_images i"
+        "  JOIN users u ON u.id = i.user_id"
+        " WHERE u.nick_lower = ? AND i.kind = ?",
+        (nick_lower, kind),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def save_image(conn, user_id, kind, data, meta, now) -> dict:
+    """Записывает картинку вместо прежней того же вида. meta — из images.inspect(). Возвращает профиль."""
+    with transaction(conn):
+        conn.execute(
+            "INSERT INTO user_images (user_id, kind, content_type, data, width, height, sha256, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (user_id, kind) DO UPDATE SET"
+            "   content_type = excluded.content_type, data = excluded.data,"
+            "   width = excluded.width, height = excluded.height,"
+            "   sha256 = excluded.sha256, updated_at = excluded.updated_at",
+            (user_id, kind, meta["content_type"], data, meta["width"], meta["height"],
+             meta["sha256"], to_iso(now)),
+        )
+    return own_profile(conn, user_id, now)
+
+
+def delete_image(conn, user_id, kind, now) -> dict:
+    """Убирает картинку. Если её не было, ничего не меняется. Возвращает профиль."""
+    with transaction(conn):
+        conn.execute("DELETE FROM user_images WHERE user_id = ? AND kind = ?", (user_id, kind))
+    return own_profile(conn, user_id, now)

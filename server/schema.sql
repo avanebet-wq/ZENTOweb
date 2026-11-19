@@ -74,7 +74,9 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash     TEXT NOT NULL,
     phone             TEXT UNIQUE,
     created_at        TEXT NOT NULL,
-    rules_accepted_at TEXT NOT NULL
+    rules_accepted_at TEXT NOT NULL,
+    bio               TEXT NOT NULL DEFAULT '',
+    nick_changed_at   TEXT
 );
 
 -- Коды восстановления пароля: один код на пользователя (новый заменяет старый). Только хеш.
@@ -112,4 +114,25 @@ CREATE TABLE IF NOT EXISTS captcha_tickets (
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     used_at    TEXT
+);
+
+-- Картинки профиля (аватар и баннер) лежат в самой базе, чтобы бэкап их забирал.
+-- Тип проверяет server/images.py по сигнатуре: только PNG, JPEG, WEBP. Одна картинка на каждый вид.
+CREATE TABLE IF NOT EXISTS user_images (
+    user_id      INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL CHECK (kind IN ('avatar', 'banner')),
+    content_type TEXT NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/webp')),
+    data         BLOB NOT NULL,
+    width        INTEGER NOT NULL CHECK (width > 0),
+    height       INTEGER NOT NULL CHECK (height > 0),
+    sha256       TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    PRIMARY KEY (user_id, kind)
+);
+
+-- Старый ник после смены держится 30 дней: его не может взять другой покупатель.
+CREATE TABLE IF NOT EXISTS nick_reservations (
+    nick_lower     TEXT PRIMARY KEY,
+    user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    reserved_until TEXT NOT NULL
 );
