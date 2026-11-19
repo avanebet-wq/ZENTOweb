@@ -1,13 +1,7 @@
 /* Капелька входа: появляется под шапкой после входа (capsule.js).
-   Стекло как у .glass, обводка переливается. Блюр только на экранах от 720 px. */
+   Стеклянная капсула iOS 26 с блюром, обводка мягко переливается. */
 
-:root {
-  --capsule-ok: #16A34A;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --capsule-ok: #4ADE80; }
-}
-:root[data-theme="dark"] { --capsule-ok: #4ADE80; }
+:root { --capsule-ok: #30D158; }
 
 /* Угол для вращения обводки. Без @property вращения не будет: остаётся статичный градиент */
 @property --angle {
@@ -38,11 +32,13 @@
   min-width: 0;
   min-height: 60px;
   padding: 8px 18px 8px 8px;
-  border: 1px solid var(--glass-rim-soft);
+  border: 0;
   border-radius: 999px;
-  background: var(--glass-bg);
-  color: var(--color-foreground);
-  box-shadow: var(--glass-shadow), var(--glass-inner);
+  background: var(--glass-sheen), rgba(40, 42, 58, 0.62);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  color: var(--label);
+  box-shadow: var(--glass-shadow), var(--glass-rim-top);
   opacity: 0;
 }
 
@@ -53,12 +49,12 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  padding: 1.5px;
+  padding: 1px;
   background: conic-gradient(from var(--angle),
-    rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.95) 12%,
-    rgba(147, 197, 253, 0.85) 25%, rgba(255, 255, 255, 0.15) 40%,
-    rgba(134, 239, 172, 0.75) 60%, rgba(255, 255, 255, 0.15) 75%,
-    rgba(255, 255, 255, 0.95) 90%, rgba(255, 255, 255, 0.15));
+    rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.55) 12%,
+    rgba(72, 120, 240, 0.55) 25%, rgba(255, 255, 255, 0.10) 40%,
+    rgba(168, 144, 240, 0.50) 60%, rgba(255, 255, 255, 0.10) 75%,
+    rgba(255, 255, 255, 0.55) 90%, rgba(255, 255, 255, 0.10));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
@@ -71,7 +67,7 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: radial-gradient(120% 70% at 0% 0%, rgba(255, 255, 255, 0.22), transparent 55%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 55%);
   pointer-events: none;
 }
 
@@ -80,10 +76,10 @@
   width: 44px; height: 44px;
   display: grid; place-items: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, #1E40AF 0%, #7C3AED 100%);
+  background: linear-gradient(135deg, #3A64D8 0%, #7A5CD6 100%);
   color: #fff;
-  font-weight: 800; font-size: 0.95rem; line-height: 1; letter-spacing: 0.03em;
-  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.30);
+  font-weight: 600; font-size: 15px; line-height: 1; letter-spacing: 0.02em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .capsule-text {
@@ -91,11 +87,11 @@
   min-width: 0;
   line-height: 1.25;
 }
-.capsule-title { font-weight: 700; font-size: 1rem; white-space: nowrap; }
+.capsule-title { font-weight: 600; font-size: 15px; white-space: nowrap; }
 .capsule-nick {
   max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 0.9rem; color: var(--color-muted-foreground);
+  font-size: 13px; color: var(--label-2);
 }
 .capsule-nick:empty { display: none; }
 
@@ -123,15 +119,6 @@
 /* Галочка стартует через 350 мс и рисуется 450 мс */
 .capsule.is-on .capsule-check path { animation: capsule-draw 450ms ease-out 350ms both; }
 .capsule.is-on.has-angle .capsule-card::before { animation: capsule-spin 3.2s linear infinite; }
-
-/* На телефоне без блюра: плотное стекло (--glass-bg). С 720 px — блюр поверх страницы */
-@media (min-width: 720px) {
-  .capsule-card {
-    background: var(--glass-bg-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-  }
-}
 
 /* Меньше прозрачности: сплошной фон, без блюра */
 @media (prefers-reduced-transparency: reduce) {
