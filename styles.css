@@ -2,49 +2,79 @@
   --color-primary: #2563EB;
   --color-on-primary: #FFFFFF;
   --color-accent: #EC4899;
-  --color-background: #FFFFFF;
+  --color-background: #EEF2FF;
   --color-foreground: #0F172A;
-  --color-muted: #F1F5FD;
   --color-muted-foreground: #475569;
-  --color-border: #E4ECFC;
-  --color-ring: #2563EB;
+  --glass-bg: rgba(255, 255, 255, 0.28);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --glass-blur: blur(24px) saturate(180%);
+  --ring: #2563EB;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-background: #0F172A;
+    --color-background: #0B1020;
     --color-foreground: #F8FAFC;
-    --color-muted: #1E293B;
     --color-muted-foreground: #CBD5E1;
-    --color-border: #334155;
+    --glass-bg: rgba(30, 41, 59, 0.35);
+    --glass-border: rgba(255, 255, 255, 0.14);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 }
 
 :root[data-theme="dark"] {
-  --color-background: #0F172A;
+  --color-background: #0B1020;
   --color-foreground: #F8FAFC;
-  --color-muted: #1E293B;
   --color-muted-foreground: #CBD5E1;
-  --color-border: #334155;
+  --glass-bg: rgba(30, 41, 59, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
+  min-height: 100vh;
   background: var(--color-background);
   color: var(--color-foreground);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.6;
+  position: relative;
+  overflow-x: hidden;
 }
+
+/* Цветные пятна под стеклом: без них эффект стекла не виден */
+.bg-blobs {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.bg-blobs span {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.8;
+}
+.bg-blobs span:nth-child(1) { width: 380px; height: 380px; background: #60A5FA; top: -80px; left: -80px; }
+.bg-blobs span:nth-child(2) { width: 320px; height: 320px; background: #F472B6; top: 30%; right: -100px; }
+.bg-blobs span:nth-child(3) { width: 360px; height: 360px; background: #A78BFA; bottom: -80px; left: 20%; }
+:root[data-theme="dark"] .bg-blobs span,
+:root:not([data-theme="light"]) .bg-blobs span { opacity: 0.35; }
 
 a { color: var(--color-primary); }
 
 a:focus-visible,
 button:focus-visible {
-  outline: 3px solid var(--color-ring);
+  outline: 3px solid var(--ring);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: 12px;
 }
 
 .container {
@@ -53,13 +83,27 @@ button:focus-visible {
   padding: 0 16px;
 }
 
-/* Header */
+/* Общий стеклянный стиль */
+.glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+}
+
+/* Шапка */
 .site-header {
-  border-bottom: 1px solid var(--color-border);
   position: sticky;
-  top: 0;
-  background: var(--color-background);
+  top: 12px;
   z-index: 10;
+  margin: 12px 16px 0;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
 }
 .header-inner {
   display: flex;
@@ -67,12 +111,11 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 14px;
-  padding-bottom: 14px;
+  padding: 10px 20px;
 }
 .logo {
   font-weight: 800;
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   color: var(--color-foreground);
   text-decoration: none;
   letter-spacing: 0.04em;
@@ -89,10 +132,16 @@ nav a {
 }
 nav a:hover { color: var(--color-primary); }
 
-/* Hero */
+/* Главный экран */
 .hero {
   padding: 72px 0 56px;
-  background: linear-gradient(135deg, var(--color-muted), var(--color-background));
+}
+.hero .container > * {
+  position: relative;
+}
+.hero-card {
+  border-radius: 32px;
+  padding: 48px 32px;
 }
 .eyebrow {
   color: var(--color-accent);
@@ -119,38 +168,48 @@ h1 {
   margin-top: 24px;
 }
 
-/* Buttons */
+/* Кнопки */
 .btn {
   display: inline-block;
   padding: 12px 22px;
-  border-radius: 10px;
+  border-radius: 999px;
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease;
 }
 .btn-primary {
-  background: var(--color-primary);
+  background: rgba(37, 99, 235, 0.85);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   color: var(--color-on-primary);
-  border: 2px solid var(--color-primary);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
 }
-.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:hover { transform: translateY(-1px); background: rgba(37, 99, 235, 0.95); }
 .btn-ghost {
-  background: transparent;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   color: var(--color-foreground);
-  border: 2px solid var(--color-border);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight);
 }
-.btn-ghost:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.btn-ghost:hover { transform: translateY(-1px); }
 
-/* Sections */
-.section { padding: 56px 0; }
-.section-muted { background: var(--color-muted); }
+/* Секции */
+.section { padding: 24px 0; }
+.section-glass {
+  border-radius: 32px;
+  padding: 40px 32px;
+  margin: 16px 0;
+}
 h2 {
   font-size: clamp(1.6rem, 4vw, 2.2rem);
   margin: 0 0 16px;
 }
 
-/* Cards */
+/* Карточки */
 .cards {
   list-style: none;
   padding: 0;
@@ -163,23 +222,39 @@ h2 {
   .cards { grid-template-columns: repeat(3, 1fr); }
 }
 .card {
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  padding: 20px;
+  border-radius: 24px;
+  padding: 22px;
 }
 .card h3 { margin: 0 0 8px; }
 .card p { margin: 0; color: var(--color-muted-foreground); }
 
-/* Footer */
+/* Подвал */
 .site-footer {
-  border-top: 1px solid var(--color-border);
-  padding: 24px 0;
+  margin: 24px 16px 16px;
+  border-radius: 24px;
+  padding: 20px;
   color: var(--color-muted-foreground);
   font-size: 0.95rem;
 }
 
-/* Motion */
+/* Если браузер не поддерживает размытие или пользователь просит меньше прозрачности */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass, .site-header, .btn-primary, .btn-ghost {
+    background: rgba(255, 255, 255, 0.92);
+  }
+  :root[data-theme="dark"] .glass,
+  :root[data-theme="dark"] .site-header { background: rgba(15, 23, 42, 0.95); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .site-header, .btn-primary, .btn-ghost, .section-glass, .card, .site-footer {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--color-background);
+  }
+  .bg-blobs { display: none; }
+}
+
+/* Движение */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;
