@@ -10,6 +10,7 @@
 
 import hashlib
 import shutil
+import socket
 import sqlite3
 import struct
 import sys
@@ -323,7 +324,24 @@ class ImageUploadTest(ProfileServerBase):
         again = self.request("DELETE", "/api/profile/avatar", headers=self.cookie)
         self.assertEqual(again.status, 200, again.body)
         self.assertEqual(self.image_count(), 0)
-        self.assertEqual(self.request("GET", "/api/users/anna_petrova/avatar").status, 404)
+        self.assertEqual(self.request("GET", "/api/users/anna_petrova/avatar", headers=self.cookie).status, 404)
+
+    def test_upload_without_session_is_refused_before_body_is_read(self):
+        # Шлём только заголовки с большой длиной и ни байта тела. Сервер, читающий тело первым,
+        # ждал бы его до таймаута; здесь он обязан ответить 401 сразу.
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
+        self.addCleanup(sock.close)
+        sock.sendall(b"PUT /api/profile/avatar HTTP/1.1\r\nHost: test\r\n"
+                     b"Content-Type: image/png\r\nContent-Length: 1000000\r\n\r\n")
+        answer = b""
+        while True:                                  # сервер закрывает соединение после ответа
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            answer += chunk
+        self.assertTrue(answer.startswith(b"HTTP/1.") and b" 401 " in answer.split(b"\r\n", 1)[0], answer[:80])
+        self.assertIn(b"login_required", answer)
+        self.assertEqual(self.image_count(), 0)
 
     def test_upload_rate_limit_per_user(self):
         self.start_server(admin_token=TOKEN, db_name="limits.db", auth_limits={"image_upload": (2, 3600)})
@@ -359,32 +377,36 @@ class ImageServeTest(ProfileServerBase):
         self.data = png_bytes(64, 48)
         self.upload("avatar", self.data, "image/png", self.cookie)
 
-    def test_avatar_is_served_with_type_etag_and_cache(self):
-        resp = self.request("GET", "/api/users/ANNA_petrova/avatar")
+    def test_avatar_is_served_with_type_etag_and_private_cache(self):
+        resp = self.request("GET", "/api/users/ANNA_petrova/avatar", headers=self.cookie)
         self.assertEqual(resp.status, 200)
         self.assertEqual(resp.raw, self.data)
         self.assertEqual(resp.headers["Content-Type"], "image/png")
-        self.assertEqual(resp.headers["Cache-Control"], "public, max-age=3600")
+        self.assertEqual(resp.headers["Cache-Control"], "private, max-age=3600")
         self.assertEqual(resp.headers["ETag"], f'"{hashlib.sha256(self.data).hexdigest()}"')
         self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
 
     def test_matching_etag_gets_304_without_body(self):
-        etag = self.request("GET", "/api/users/anna_petrova/avatar").headers["ETag"]
-        resp = self.request("GET", "/api/users/anna_petrova/avatar", headers={"If-None-Match": etag})
+        etag = self.request("GET", "/api/users/anna_petrova/avatar", headers=self.cookie).headers["ETag"]
+        resp = self.request("GET", "/api/users/anna_petrova/avatar",
+                            headers={**self.cookie, "If-None-Match": etag})
         self.assertEqual(resp.status, 304)
         self.assertEqual(resp.raw, b"")
-        self.assertEqual(resp.headers["Cache-Control"], "public, max-age=3600")
+        self.assertEqual(resp.headers["Cache-Control"], "private, max-age=3600")
 
-    def test_missing_image_or_user_is_404(self):
-        self.assertEqual(self.request("GET", "/api/users/anna_petrova/banner").status, 404)
-        self.assertEqual(self.request("GET", "/api/users/nobody_here/avatar").status, 404)
+    def test_missing_image_or_user_is_404_for_logged_in(self):
+        self.assertEqual(self.request("GET", "/api/users/anna_petrova/banner", headers=self.cookie).status, 404)
+        self.assertEqual(self.request("GET", "/api/users/nobody_here/avatar", headers=self.cookie).status, 404)
 
-    def test_images_are_public_without_login(self):
-        resp = self.request("GET", "/api/users/anna_petrova/avatar", anonymous=True)
-        self.assertEqual(resp.status, 200)
+    def test_guest_bot_and_admin_get_401(self):
+        for headers in ({}, {"Authorization": f"Bearer {SHOP_BOT}"}, {"Authorization": f"Bearer {TOKEN}"}):
+            for kind in ("avatar", "banner"):
+                resp = self.request("GET", f"/api/users/anna_petrova/{kind}", headers=headers)
+                self.assert_error(resp, 401, "login_required")
+                self.assertNotEqual(resp.headers.get("Content-Type"), "image/png")
 
     def test_other_api_answers_stay_no_store(self):
-        resp = self.request("GET", "/api/users/anna_petrova/profile")
+        resp = self.request("GET", "/api/users/anna_petrova/profile", headers=self.cookie)
         self.assertEqual(resp.headers["Cache-Control"], "no-store")
 
     def test_backup_copy_contains_the_image(self):

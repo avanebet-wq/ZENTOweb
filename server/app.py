@@ -46,7 +46,7 @@ DISCARD_LIMIT_BYTES = 1024 * 1024
 # Порог «читать и выбросить» поднят только для этих маршрутов, чтобы клиент получал 413, а не обрыв.
 IMAGE_UPLOAD_PATHS = frozenset({"/api/profile/avatar", "/api/profile/banner"})
 IMAGE_DISCARD_LIMIT_BYTES = 8 * 1024 * 1024
-IMAGE_CACHE_CONTROL = "public, max-age=3600"
+IMAGE_CACHE_CONTROL = "private, max-age=3600"
 
 HANDLER_TIMEOUT_SECONDS = 10       # висящие соединения закрываются через 10 секунд
 
@@ -476,14 +476,14 @@ def _admin_backup(handler, params, query):
 
 # ---------------------------------------------------------------- профиль покупателя
 
-def _session_user(handler):
+def _session_user(handler, message=None):
     """Пользователь по cookie-сессии. Токен бота и админский токен сюда не пускают: без сессии — 401."""
     token = auth.read_session_token(handler.headers.get("Cookie"))
     user = None
     if token is not None:
         user = _run_auth(handler, store.user_for_session, auth.token_hash(token), store.utc_now())
     if user is None:
-        raise _auth_error("login_required", message="Войдите, чтобы редактировать профиль")
+        raise _auth_error("login_required", message=message)
     return user
 
 
@@ -555,6 +555,7 @@ def _profile_delete_banner(handler, params, query):
 
 
 def _user_profile(handler, params, query):
+    _session_user(handler, "Войдите, чтобы посмотреть профиль")
     profile = _run(handler, store.public_profile, params["nick"].lower())
     if profile is None:
         raise ApiError(404, {"error": "not found"})
@@ -562,6 +563,7 @@ def _user_profile(handler, params, query):
 
 
 def _user_image(handler, params, kind):
+    _session_user(handler, "Войдите, чтобы посмотреть картинку")
     found = _run(handler, store.get_image, params["nick"].lower(), kind)
     if found is None:
         raise ApiError(404, {"error": "not found"})
@@ -856,6 +858,13 @@ class Handler(BaseHTTPRequestHandler):
         path = parts.path
         query = {key: values[0] for key, values in parse_qs(parts.query).items()}
         try:
+            if method == "PUT" and path in IMAGE_UPLOAD_PATHS:
+                # Сначала вход: без сессии тело картинки не читаем, а соединение закрываем после ответа.
+                try:
+                    _session_user(self)
+                except ApiError:
+                    self.close_connection = True
+                    raise
             # Тело читаем сразу, даже если маршрут откажет (например 503): иначе сокет закроется с непрочитанными данными.
             read_limit, discard_limit = _body_limits(method, path)
             self._prefetch_body(read_limit, discard_limit)
