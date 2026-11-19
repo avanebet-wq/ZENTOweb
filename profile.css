@@ -279,3 +279,10 @@ dialog.profile-screen[open] .profile-body { animation: pf-push 380ms var(--ease-
   dialog.profile-screen[open] .profile-body { animation: none; }
   .pf-ach-grid { scroll-behavior: auto; }
 }
+
+/* Доступность: красные кнопки удаления читаемее, закрытые медали чуть заметнее */
+#pf-avatar-del, #pf-banner-del { color: #FF6961; }
+.pf-medal:not(.is-earned) .pf-medal-art { opacity: 0.55; }
+@media (prefers-reduced-transparency: reduce) {
+  .pf-pill { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

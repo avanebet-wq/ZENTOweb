@@ -293,3 +293,7 @@
     transition: none !important;
   }
 }
+
+@media (prefers-reduced-transparency: reduce) {
+  dialog::backdrop { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

@@ -14,7 +14,6 @@
   <script src="app.js" defer></script>
 </head>
 <body data-page="shop">
-  <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
 
   <!-- Экран входа: обязательный. Пока сайт не знает, что вы вошли, он на весь экран, а магазин скрыт -->
   <section class="gate" id="gate" aria-label="Вход в ZENTO">
@@ -316,7 +315,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="captcha.js" defer></script>
   <script src="auth.js" defer></script>
-<script src="profile.js" defer></script>
+  <script src="profile.js" defer></script>
   <!-- Мой профиль: экран на весь экран. Открывает клик по аватару в шапке (auth.js), ведёт profile.js.
        Экраны: профиль, настройки, кадрирование и «сохранено». Данные с сервера выводим через textContent -->
   <dialog class="profile-screen" id="profile-dialog" aria-labelledby="profile-title">

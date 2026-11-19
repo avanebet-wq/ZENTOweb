@@ -887,3 +887,13 @@ td .muted { font-size: 13px; }
 @media (min-width: 720px) {
   .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; }
 }
+
+/* ===== Доступность (по проверке WCAG): плейсхолдеры, ссылки в тексте, ошибки, фокус, счётчик ===== */
+.field input::placeholder, .field textarea::placeholder { color: rgba(235, 235, 245, 0.55); }
+.check a, .rules-card p a, .hero .lead a { text-decoration: underline; text-underline-offset: 3px; }
+.field-error { color: #FF6961; }
+.field input:focus, .field textarea:focus, .status-select:focus, .num-input:focus { outline: 2px solid transparent; }
+.cart-count { background: #D70015; }
+@media (prefers-reduced-transparency: reduce) {
+  dialog::backdrop { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
