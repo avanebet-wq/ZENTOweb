@@ -21,7 +21,6 @@
   function money(v) { return rub.format(num(v)); }
   function count(v) { return intFmt.format(num(v)); }
   function safeColor(c) { return /^#[0-9a-f]{3,8}$/i.test(String(c || '')) ? c : '#1E40AF'; }
-  function initial(name) { var s = String(name || '').trim(); return s ? s.charAt(0).toUpperCase() : 'Z'; }
   function attrSel(name, val) { return '[' + name + '="' + String(val).replace(/["\\]/g, '\\$&') + '"]'; }
   function hasTag(tag) { return function (p) { return Array.isArray(p.tags) && p.tags.indexOf(tag) !== -1; }; }
   function isOnSale(p) { return hasTag('sale')(p) || num(p.old_price) > num(p.price); }
@@ -34,6 +33,29 @@
   function getStore(kind, key) { try { var s = window[kind]; return s ? s.getItem(key) : null; } catch (e) { return null; } }
   function setStore(kind, key, val) {
     try { var s = window[kind]; if (!s) return; if (val) s.setItem(key, val); else s.removeItem(key); } catch (e) { /* не запоминаем */ }
+  }
+
+  /* ---------- Иллюстрации товаров (SVG в стиле ZENTO, без фото) ---------- */
+  var ART = {
+    'Аудио': '<path d="M14 40v-6a18 18 0 0 1 36 0v6"/><rect x="10" y="38" width="9" height="15" rx="4"/><rect x="45" y="38" width="9" height="15" rx="4"/>',
+    'Гаджеты': '<rect x="21" y="8" width="22" height="48" rx="5"/><path d="M26 15h12M29 49h6"/>',
+    'Умный дом': '<path d="M24 35a8 8 0 1 1 16 0c0 3.5-2.5 5.5-3.5 9h-9c-1-3.5-3.5-5.5-3.5-9z"/><path d="M27 51h10M29 56h6M32 8v4"/>',
+    'Фитнес': '<path d="M9 25v14M15 20v24M49 20v24M55 25v14M15 32h34"/>',
+    'Офис': '<rect x="7" y="18" width="50" height="28" rx="5"/><path d="M15 27h3M22 27h3M29 27h3M36 27h3M43 27h3M15 36h22M43 36h6"/>',
+    'Путешествия': '<rect x="18" y="14" width="28" height="40" rx="10"/><path d="M26 14v-4h12v4M24 30h16M18 24h-4M46 24h4"/>'
+  };
+  var ART_DEFAULT = '<rect x="14" y="14" width="36" height="36" rx="9"/>';
+  function artSvg(p) {
+    var key = String(p.category || '');
+    var body = Object.prototype.hasOwnProperty.call(ART, key) ? ART[key] : ART_DEFAULT;
+    return '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
+  }
+  function artHTML(p, cls) {
+    return '<span class="art ' + cls + '" style="--tile:' + safeColor(p.color) + '" aria-hidden="true">' + artSvg(p) + '</span>';
+  }
+  function setArt(node, p) {
+    node.style.setProperty('--tile', safeColor(p.color));
+    node.innerHTML = artSvg(p);
   }
 
   // На iPhone :active срабатывает только если у документа есть touch-обработчик
@@ -167,6 +189,10 @@
     if (n <= 5) return 'Осталось мало: ' + n + ' шт.';
     return 'В наличии: ' + n + ' шт.';
   }
+  function setStockLine(node, p) {
+    node.textContent = stockText(p.stock);
+    node.classList.toggle('is-out', num(p.stock) <= 0);
+  }
 
   function renderBadge() {
     var n = cartCount();
@@ -219,14 +245,10 @@
     var p = byId[String(id)];
     if (!p) return;
     currentId = String(p.id);
-    var tile = el('p-tile');
-    tile.style.setProperty('--tile', safeColor(p.color));
-    tile.textContent = initial(p.name);
+    setArt(el('p-art'), p);
     el('p-cat').textContent = p.category;
     el('p-title').textContent = p.name;
-    var stock = el('p-stock');
-    stock.textContent = stockText(p.stock);
-    stock.classList.toggle('is-out', num(p.stock) <= 0);
+    setStockLine(el('p-stock'), p);
     el('p-desc').textContent = p.description || '';
     el('p-price').innerHTML = priceHTML(p);
     refreshAddButton();
@@ -241,7 +263,7 @@
     var have = qtyInCart(p.id);
     if (num(p.stock) <= 0) {
       btn.disabled = true;
-      btn.textContent = 'Нет в наличии';
+      btn.textContent = 'В корзину';
     } else if (have >= num(p.stock)) {
       btn.disabled = true;
       btn.textContent = 'Все доступные уже в корзине';
@@ -275,7 +297,7 @@
       var p = x.p;
       var full = x.item.qty >= num(p.stock);
       return '<li class="cart-item glass">' +
-        '<span class="tile tile-sm" style="--tile:' + safeColor(p.color) + '" aria-hidden="true">' + esc(initial(p.name)) + '</span>' +
+        artHTML(p, 'art-sm') +
         '<div class="cart-info"><p class="cart-name">' + esc(p.name) + '</p>' +
         '<p class="cart-unit">' + money(p.price) + ' за шт.</p></div>' +
         '<div class="cart-row">' +
@@ -305,7 +327,7 @@
     phone: function (v) {
       var digits = v.replace(/\D/g, '');
       return (/^\+?[\d\s()\-]+$/.test(v) && digits.length >= 10 && digits.length <= 15)
-        ? '' : 'Укажите телефон, например +7 900 123-45-67';
+        ? '' : 'Укажите телефон, например +7\u00A0900\u00A0123\u201145\u201167';
     },
     email: function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? '' : 'Укажите почту, например name@mail.ru'; },
     address: function (v) { return v.length >= 5 ? '' : 'Укажите адрес доставки: город, улицу и дом'; }
@@ -417,19 +439,33 @@
     var out = num(p.stock) <= 0;
     li.innerHTML =
       '<article class="product glass">' +
-        '<button class="product-main" type="button" data-open="' + esc(p.id) + '">' +
-          '<span class="tile" style="--tile:' + safeColor(p.color) + '" aria-hidden="true">' + esc(initial(p.name)) + '</span>' +
+        '<button class="product-main press" type="button" data-open="' + esc(p.id) + '">' +
+          artHTML(p, 'art-card') +
           '<span class="product-cat">' + esc(p.category) + '</span>' +
           '<span class="product-name">' + esc(p.name) + '</span>' +
         '</button>' +
         '<div class="product-foot">' +
           '<p class="price">' + priceHTML(p) + '</p>' +
-          '<button class="btn btn-primary btn-small press" type="button" data-add="' + esc(p.id) + '"' + (out ? ' disabled' : '') + '>' +
-            (out ? 'Нет в наличии' : 'В корзину') +
-          '</button>' +
+          (out ? '<p class="stock-out">Нет в наличии</p>' : '') +
+          '<button class="btn btn-primary btn-small press" type="button" data-add="' + esc(p.id) + '"' + (out ? ' disabled' : '') + '>В корзину</button>' +
         '</div>' +
       '</article>';
     return li;
+  }
+
+  function skeletonCard() {
+    var li = document.createElement('li');
+    li.className = 'skeleton-card';
+    li.setAttribute('aria-hidden', 'true');
+    li.innerHTML = '<span class="sk sk-art"></span><span class="sk sk-line"></span><span class="sk sk-line short"></span><span class="sk sk-btn"></span>';
+    return li;
+  }
+
+  function renderSkeleton() {
+    var grid = el('grid');
+    grid.innerHTML = '';
+    for (var i = 0; i < 8; i++) grid.appendChild(skeletonCard());
+    grid.setAttribute('aria-busy', 'true');
   }
 
   function fillRail(sectionId, listId, items) {
@@ -442,23 +478,20 @@
   }
 
   function renderHero() {
-    var hero = el('hero');
     var section = el('today');
     var featured = products.filter(hasTag('top'))[0] || products[0];
     section.hidden = !featured;
     if (!featured) return;
-    var tile = el('hero-tile');
-    tile.style.setProperty('--tile', safeColor(featured.color));
-    tile.textContent = initial(featured.name);
+    setArt(el('hero-art'), featured);
     el('hero-name').textContent = featured.name;
     el('hero-desc').textContent = featured.description || '';
     el('hero-price').innerHTML = priceHTML(featured);
+    setStockLine(el('hero-stock'), featured);
     var add = el('hero-add');
     add.setAttribute('data-add', String(featured.id));
     add.disabled = num(featured.stock) <= 0;
-    add.textContent = num(featured.stock) <= 0 ? 'Нет в наличии' : 'В корзину';
     el('hero-open').setAttribute('data-open', String(featured.id));
-    reveal(hero);
+    reveal(el('hero'));
   }
 
   function renderChips() {
@@ -495,6 +528,7 @@
     el('catalog-title').textContent = searchText.trim()
       ? 'Поиск: ' + searchText.trim()
       : (activeCat === 'all' ? 'Все товары' : activeCat);
+    grid.setAttribute('aria-busy', 'false');
     if (loadFailed) {
       status.textContent = '';
       grid.innerHTML = '<li class="empty">Не удалось загрузить товары. Обновите страницу, пожалуйста.</li>';
@@ -516,6 +550,10 @@
     reveal(grid);
   }
 
+  function scrollToCatalog() {
+    el('catalog').scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+  }
+
   function pickCategory(key) {
     activeCat = key;
     searchText = '';
@@ -523,10 +561,6 @@
     markChips();
     renderGrid();
     scrollToCatalog();
-  }
-
-  function scrollToCatalog() {
-    el('catalog').scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
   }
 
   function onSearch(e) {
@@ -613,6 +647,7 @@
     el('search-form').addEventListener('submit', function (e) { e.preventDefault(); scrollToCatalog(); });
     el('order-form').addEventListener('submit', onOrderSubmit);
     renderBadge();
+    renderSkeleton();
 
     loadProducts().then(function (list) {
       if (list) products = list; else loadFailed = true;
@@ -635,7 +670,7 @@
   var TOKEN_KEY = 'zento-admin-token';
   var STATUSES = [
     ['new', 'Новый'],
-    ['paid', 'Оплачен'],
+    ['processing', 'В работе'],
     ['shipped', 'Отправлен'],
     ['done', 'Выполнен'],
     ['cancelled', 'Отменён']
@@ -806,13 +841,16 @@
       var days = Array.isArray(s.orders_by_day) ? s.orders_by_day : [];
       el('days-body').innerHTML = days.length
         ? days.map(function (d) {
-          return '<tr><td>' + esc(d.day) + '</td><td>' + count(d.count) + '</td><td>' + money(d.revenue) + '</td></tr>';
+          return '<tr><td>' + esc(d.day) + '</td>' +
+            '<td data-label="Заказов">' + count(d.count) + '</td>' +
+            '<td data-label="Выручка">' + money(d.revenue) + '</td></tr>';
         }).join('')
         : '<tr><td colspan="3" class="muted">Заказов пока нет</td></tr>';
       var top = Array.isArray(s.top_products) ? s.top_products : [];
       el('top-body').innerHTML = top.length
         ? top.map(function (p) {
-          return '<tr><td>' + esc(p.name || ('№ ' + p.id)) + '</td><td>' + count(p.qty) + '</td></tr>';
+          return '<tr><td>' + esc(p.name || ('№ ' + p.id)) + '</td>' +
+            '<td data-label="Продано, шт.">' + count(p.qty) + '</td></tr>';
         }).join('')
         : '<tr><td colspan="2" class="muted">Пока нет данных</td></tr>';
     }
@@ -833,16 +871,16 @@
       return api('/api/admin/orders').then(function (list) {
         list = Array.isArray(list) ? list : [];
         el('orders-body').innerHTML = list.length ? list.map(function (o) {
-          var c = o.customer || { name: o.customer_name, phone: o.customer_phone };
+          var c = o.customer || {};
           var items = Array.isArray(o.items)
             ? o.items.map(function (i) { return esc(i.name || ('№ ' + i.product_id)) + ' × ' + count(i.qty); }).join('<br>')
             : '';
-          return '<tr><td>' + esc(o.id) + '</td>' +
-            '<td>' + esc(fmtDate(o.created_at)) + '</td>' +
-            '<td>' + esc(c.name || '—') + '<br><span class="muted">' + esc(c.phone || '') + '</span></td>' +
-            '<td>' + items + '</td>' +
-            '<td>' + money(o.total) + '</td>' +
-            '<td>' + statusSelect(o.id, o.status) + '</td></tr>';
+          return '<tr><td>№ ' + esc(o.id) + '</td>' +
+            '<td data-label="Дата">' + esc(fmtDate(o.created_at)) + '</td>' +
+            '<td data-label="Покупатель">' + esc(c.name || '—') + '<br><span class="muted">' + esc(c.phone || '') + '</span></td>' +
+            '<td data-label="Товары">' + items + '</td>' +
+            '<td data-label="Сумма">' + money(o.total) + '</td>' +
+            '<td data-label="Статус">' + statusSelect(o.id, o.status) + '</td></tr>';
         }).join('') : '<tr><td colspan="6" class="muted">Заказов пока нет</td></tr>';
         loaded.orders = true;
       }).catch(function (err) { onApiError(err, 'Не удалось загрузить заказы'); });
@@ -872,10 +910,10 @@
         list = Array.isArray(list) ? list : [];
         el('customers-body').innerHTML = list.length ? list.map(function (c) {
           return '<tr><td>' + esc(c.name || '—') + '</td>' +
-            '<td>' + esc(c.phone || '—') + '</td>' +
-            '<td>' + esc(c.email || '—') + '</td>' +
-            '<td>' + esc(c.address || '—') + '</td>' +
-            '<td>' + (c.orders_count != null ? count(c.orders_count) : '—') + '</td></tr>';
+            '<td data-label="Телефон">' + esc(c.phone || '—') + '</td>' +
+            '<td data-label="Почта">' + esc(c.email || '—') + '</td>' +
+            '<td data-label="Адрес">' + esc(c.address || '—') + '</td>' +
+            '<td data-label="Заказов">' + (c.orders_count != null ? count(c.orders_count) : '—') + '</td></tr>';
         }).join('') : '<tr><td colspan="5" class="muted">Покупателей пока нет</td></tr>';
         loaded.customers = true;
       }).catch(function (err) { onApiError(err, 'Не удалось загрузить покупателей'); });
@@ -888,12 +926,12 @@
       var id = esc(p.id);
       return '<tr>' +
         '<td>' + esc(p.name) + '</td>' +
-        '<td>' + esc(p.category) + '</td>' +
-        '<td><label class="visually-hidden" for="price-' + id + '">Цена: ' + esc(p.name) + '</label>' +
+        '<td data-label="Категория">' + esc(p.category) + '</td>' +
+        '<td data-label="Цена, ₽"><label class="visually-hidden" for="price-' + id + '">Цена: ' + esc(p.name) + '</label>' +
           '<input class="num-input" id="price-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.price) + '"></td>' +
-        '<td><label class="visually-hidden" for="stock-' + id + '">Остаток: ' + esc(p.name) + '</label>' +
+        '<td data-label="Остаток, шт."><label class="visually-hidden" for="stock-' + id + '">Остаток: ' + esc(p.name) + '</label>' +
           '<input class="num-input" id="stock-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.stock) + '"></td>' +
-        '<td><button class="btn btn-ghost btn-small press" type="button" data-save="' + id + '">Сохранить</button></td>' +
+        '<td class="actions"><button class="btn btn-ghost btn-small press" type="button" data-save="' + id + '">Сохранить</button></td>' +
         '</tr>';
     }
 
