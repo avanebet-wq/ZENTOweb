@@ -1,4 +1,5 @@
-/* ZENTO: вход и регистрация. Аватар в шапке, диалог #auth-dialog, капча — window.ZentoCaptcha (captcha.js).
+/* ZENTO: вход и регистрация. Экран входа #gate (обязательный), сайт #site скрыт до входа.
+   Аватар в шапке, капча — window.ZentoCaptcha (captcha.js). Сообщаем магазину (app.js) событием zento:session.
    Данные с сервера выводим только через textContent. Правила полей совпадают с договором (CONTRACT.md). */
 (function () {
   'use strict';
@@ -21,7 +22,10 @@
     accName: $('acc-name'),
     accMail: $('acc-mail'),
     logout: $('logout-btn'),
-    dialog: $('auth-dialog'),
+    gate: $('gate'),
+    gateCard: $('gate-card'),
+    gateDown: $('gate-down'),
+    site: $('site'),
     tabs: $('auth-tabs'),
     tabLogin: $('tab-login'),
     tabRegister: $('tab-register'),
@@ -60,6 +64,7 @@
   var ticket = '';
   var ticketExp = 0;
   var notifyTimer = 0;
+  var gateTimer = 0;
 
   /* ---------- Сеть ---------- */
   // Возвращает {status, data}. Сетевой сбой — отклонённый промис (сообщение NET_MSG).
@@ -197,17 +202,79 @@
     els.btn.setAttribute('aria-expanded', 'false');
   }
 
-  // Сначала узнаём, кто вошёл. Если сервера нет (сайт на GitHub Pages), аватар прячем
-  function loadMe() {
-    request('GET', '/api/auth/me').then(function (r) {
-      if (r.status === 404) { els.btn.hidden = true; return; }
-      if (r.status === 200 && r.data.ok) setUser(r.data.user || null);
-    }).catch(function () { /* оставляем гостя */ });
+  /* ---------- Экран входа и сайт ---------- */
+  // Сообщаем магазину (app.js), вошли ли: 'in' — показать товары, 'out' — убрать их
+  function emitSession(state) {
+    try {
+      document.dispatchEvent(new CustomEvent('zento:session', { detail: { state: state } }));
+    } catch (e) { /* старые браузеры: магазин останется пустым */ }
   }
 
-  /* ---------- Диалог и вкладки ---------- */
-  function activePanel() { return els.tabLogin.getAttribute('aria-selected') === 'true' ? els.panelLogin : els.panelRegister; }
+  // Экран входа обязательный: без крестика и без закрытия по клику в фон.
+  // state: 'guest' — форма входа и регистрации; 'down' — только сообщение, что сайт недоступен
+  function showGate(state) {
+    clearTimeout(gateTimer);
+    els.gate.classList.remove('is-leaving');
+    els.gate.hidden = false;
+    els.site.hidden = true;
+    els.gateCard.hidden = state !== 'guest';
+    els.gateDown.hidden = state !== 'down';
+    if (state === 'guest') {
+      setTab('login');
+      // Фокус — на вкладку «Вход», не на поле: клавиатура на телефоне сама не открывается
+      els.tabLogin.focus({ preventScroll: true });
+    }
+  }
 
+  // Экран входа мягко растворяется, сайт проявляется под ним
+  function hideGate() {
+    clearTimeout(gateTimer);
+    if (els.gate.hidden) return;
+    if (reduceMotion.matches) { els.gate.hidden = true; return; }
+    els.gate.classList.add('is-leaving');
+    gateTimer = setTimeout(function () {
+      els.gate.hidden = true;
+      els.gate.classList.remove('is-leaving');
+    }, 400);
+  }
+
+  function showSite() {
+    els.site.hidden = false;
+    restart(els.site, 'is-entering');
+  }
+
+  // Вошли: сайт показываем сразу, без перезагрузки. focusAvatar — только если вход сделал сам пользователь
+  function enterSite(focusAvatar) {
+    showSite();
+    hideGate();
+    emitSession('in');
+    if (focusAvatar) els.btn.focus({ preventScroll: true });
+  }
+
+  // Вышли или сессия кончилась: снова экран входа, товары и корзина скрыты
+  function leaveSite() {
+    setUser(null);
+    closeMenu();
+    showGate('guest');
+    emitSession('out');
+  }
+
+  // Сначала узнаём, кто вошёл. Нет ответа или это не наш сервер (GitHub Pages) — «сайт временно недоступен»
+  function loadMe() {
+    request('GET', '/api/auth/me').then(function (r) {
+      var d = r.data || {};
+      if (r.status !== 200 || d.ok !== true) { showGate('down'); return; }
+      if (d.user && typeof d.user === 'object') {
+        setUser(d.user);
+        enterSite(false);
+      } else {
+        showGate('guest');
+        emitSession('out');
+      }
+    }).catch(function () { showGate('down'); });
+  }
+
+  /* ---------- Вкладки «Вход» и «Регистрация» ---------- */
   function setTab(name) {
     var isLogin = name === 'login';
     els.tabLogin.setAttribute('aria-selected', String(isLogin));
@@ -219,24 +286,6 @@
     clearKeys(LOGIN_KEYS.concat(REG_KEYS));
     formErr(els.loginError, '');
     formErr(els.registerError, '');
-  }
-
-  function openAuth() {
-    if (els.dialog.open) return;
-    closeMenu();
-    setTab('login');
-    els.dialog.showModal();
-    var first = activePanel().querySelector('input');
-    if (first) first.focus();
-  }
-
-  function closeAuth() {
-    if (els.dialog.open) els.dialog.close();
-  }
-
-  // После закрытия фокус возвращаем на кнопку аватара
-  function onDialogClose() {
-    if (els.btn && document.body.contains(els.btn)) els.btn.focus({ preventScroll: true });
   }
 
   /* ---------- Проверки (как на сервере) ---------- */
@@ -471,7 +520,7 @@
     els.loginForm.reset();
     els.registerForm.reset();
     updateStrength();
-    closeAuth();
+    enterSite(true);
     notify('Добро пожаловать, ' + String(u.name || '') + '!');
   }
 
@@ -479,22 +528,23 @@
     if (busy) return;
     request('POST', '/api/auth/logout', {}).then(function (r) {
       if (r.status === 200 && (r.data.ok !== false)) {
-        setUser(null);
+        leaveSite();
         notify('Вы вышли из аккаунта');
-      } else {
-        notify(r.data.message || 'Не получилось выйти. Попробуйте ещё раз.');
+        return;
       }
+      notify(r.data.message || 'Не получилось выйти. Попробуйте ещё раз.');
+      els.btn.focus();
     }).catch(function () {
       notify(NET_MSG);
-    }).then(function () {
       els.btn.focus();
     });
   }
 
   /* ---------- Привязка событий ---------- */
   function bind() {
+    // Гость шапку не видит, поэтому меню только для вошедшего
     els.btn.addEventListener('click', function () {
-      if (!user) { openAuth(); return; }
+      if (!user) return;
       if (isMenuOpen()) closeMenu(); else openMenu();
     });
 
@@ -510,11 +560,11 @@
 
     els.logout.addEventListener('click', logout);
 
-    els.dialog.addEventListener('click', function (e) {
-      var t = e.target;
-      if (t === els.dialog || (t.closest && t.closest('[data-auth-close]'))) closeAuth();
+    // Магазин узнал, что вход кончился (401 на товарах): снова экран входа
+    document.addEventListener('zento:need-login', function () {
+      leaveSite();
+      notify('Сессия закончилась. Войдите снова');
     });
-    els.dialog.addEventListener('close', onDialogClose);
 
     els.tabLogin.addEventListener('click', function () { setTab('login'); });
     els.tabRegister.addEventListener('click', function () { setTab('register'); });
@@ -578,7 +628,7 @@
   }
 
   function init() {
-    if (!els.btn || !els.dialog || !els.loginForm || !els.registerForm) return;
+    if (!els.btn || !els.gate || !els.site || !els.loginForm || !els.registerForm) return;
     bind();
     updateStrength();
     loadMe();
