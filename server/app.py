@@ -15,10 +15,12 @@ import os
 import re
 import sqlite3
 import sys
+import tempfile
 import threading
 import time
 import traceback
 from collections import deque
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -47,6 +49,8 @@ EVENT_RATE_WINDOW = 60
 ADMIN_FAIL_LIMIT = 10              # неверных входов в админку с одного IP
 ADMIN_FAIL_WINDOW = 15 * 60        # за столько секунд; потом блокировка 429
 MIN_ADMIN_TOKEN_LENGTH = 32
+# Токен бота (SHOP_BOT_TOKEN): не имеет прав админа. Может только то же, что и обычный посетитель сайта.
+MIN_BOT_TOKEN_LENGTH = 32
 
 # Эти папки никогда не отдаются как статика (сравнение без учёта регистра).
 HIDDEN_DIRS = {"server", "tests", "data"}
@@ -93,6 +97,15 @@ class ApiError(Exception):
         super().__init__(status)
         self.status = status
         self.body = body
+
+
+class FileResponse:
+    """Ответ-файл (например копия базы). Отдаётся как скачивание, не как JSON."""
+
+    def __init__(self, data, filename, content_type="application/octet-stream"):
+        self.data = data
+        self.filename = filename
+        self.content_type = content_type
 
 
 # ---------------------------------------------------------------- лимиты
@@ -332,6 +345,36 @@ def _admin_product_patch(handler, params, query):
     return 200, _run(handler, store.update_product, product_id, payload)
 
 
+def make_backup(db_path) -> bytes:
+    """Делает копию базы через встроенный механизм SQLite (безопасно, даже когда идут заказы).
+    Проверяет копию командой PRAGMA integrity_check. Если проверка не 'ok' — ошибка, копию не отдаём."""
+    with tempfile.TemporaryDirectory(prefix="zento-backup-") as tmp:
+        target = Path(tmp) / "backup.db"
+        source = sqlite3.connect(str(db_path), timeout=10)
+        try:
+            copy = sqlite3.connect(str(target))
+            try:
+                source.backup(copy)
+            finally:
+                copy.close()
+        finally:
+            source.close()
+        check = sqlite3.connect(str(target))
+        try:
+            result = check.execute("PRAGMA integrity_check").fetchone()[0]
+        finally:
+            check.close()
+        if result != "ok":
+            raise RuntimeError("backup integrity check failed")
+        return target.read_bytes()
+
+
+def _admin_backup(handler, params, query):
+    data = make_backup(handler.server.db_path)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return 200, FileResponse(data, f"zento-backup-{stamp}.db")
+
+
 ROUTES = [
     ("GET", re.compile(r"^/api/products$"), _products_list),
     ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)$"), _product_get),
@@ -344,6 +387,7 @@ ROUTES = [
     ("GET", re.compile(r"^/api/admin/products$"), _admin_products),
     ("POST", re.compile(r"^/api/admin/products$"), _admin_product_create),
     ("PATCH", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_patch),
+    ("GET", re.compile(r"^/api/admin/backup$"), _admin_backup),
 ]
 
 
@@ -379,7 +423,10 @@ class Handler(BaseHTTPRequestHandler):
             self._prefetch_body()
             if path == "/api" or path.startswith("/api/"):
                 status, body = self._route_api(method, path, query)
-                self._send_json(status, body)
+                if isinstance(body, FileResponse):
+                    self._send_file(status, body)
+                else:
+                    self._send_json(status, body)
             elif method == "GET":
                 self._send_static(path)
             else:
@@ -405,9 +452,13 @@ class Handler(BaseHTTPRequestHandler):
             ip = _client_ip(self)
             if self.server.limiter.is_over("admin", ip, ADMIN_FAIL_LIMIT, ADMIN_FAIL_WINDOW):
                 raise ApiError(429, {"error": "too many requests"})
-            if not self._is_admin():
+            role = self._role()
+            if role is None:
                 self.server.limiter.record("admin", ip, ADMIN_FAIL_WINDOW)
                 raise ApiError(401, {"error": "unauthorized"})
+            if role != "admin":
+                # Токен бота правильный, но админке он не нужен: отказ, а не ошибка входа.
+                raise ApiError(403, {"error": "forbidden"})
         path_matched = False
         for route_method, pattern, func in ROUTES:
             match = pattern.match(path)
@@ -426,12 +477,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.limiter.try_hit(bucket, _client_ip(self), limit, window):
             raise ApiError(429, {"error": "too many requests"})
 
-    def _is_admin(self):
+    def _role(self):
+        """Кто пришёл по токену: 'admin', 'bot' или None (токен неверный или его нет)."""
         scheme, _, token = self.headers.get("Authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
-            return False
-        expected = self.server.admin_token.encode("utf-8")
-        return hmac.compare_digest(token.strip().encode("utf-8"), expected)
+            return None
+        given = token.strip().encode("utf-8")
+        if hmac.compare_digest(given, self.server.admin_token.encode("utf-8")):
+            return "admin"
+        if self.server.bot_token and hmac.compare_digest(given, self.server.bot_token.encode("utf-8")):
+            return "bot"
+        return None
 
     def _prefetch_body(self):
         """Читает тело запроса один раз. Слишком большое тело не сохраняем."""
@@ -493,6 +549,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_file(self, status, file):
+        self.send_response(status)
+        self._security_headers()
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Type", file.content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{file.filename}"')
+        self.send_header("Content-Length", str(len(file.data)))
+        self.end_headers()
+        self.wfile.write(file.data)
+
     def _send_static(self, path):
         found = resolve_static(self.server.static_root, path)
         if found is None:
@@ -526,10 +592,11 @@ class AppServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, *, db_path, admin_token, static_root=ROOT, quiet=False,
+    def __init__(self, address, *, db_path, admin_token, bot_token=None, static_root=ROOT, quiet=False,
                  order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT):
         self.db_path = Path(db_path)
         self.admin_token = admin_token or None
+        self.bot_token = bot_token or None
         self.static_root = Path(static_root).resolve()
         self.quiet = quiet
         self.order_limit = order_limit
@@ -539,18 +606,25 @@ class AppServer(ThreadingHTTPServer):
 
 
 def create_server(host, port, *, db_path=DEFAULT_DB, products_path=DEFAULT_PRODUCTS,
-                  admin_token=None, static_root=ROOT, quiet=False,
+                  admin_token=None, bot_token=None, static_root=ROOT, quiet=False,
                   order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT) -> AppServer:
     """Готовит базу (создаёт, заполняет, отменяет просроченные заказы) и возвращает сервер, который ещё не запущен."""
     if admin_token and len(admin_token) < MIN_ADMIN_TOKEN_LENGTH:
         raise ValueError(
             f"ADMIN_TOKEN слишком короткий: нужно не меньше {MIN_ADMIN_TOKEN_LENGTH} символов"
         )
+    if bot_token and len(bot_token) < MIN_BOT_TOKEN_LENGTH:
+        raise ValueError(
+            f"SHOP_BOT_TOKEN слишком короткий: нужно не меньше {MIN_BOT_TOKEN_LENGTH} символов"
+        )
+    if bot_token and bot_token == admin_token:
+        raise ValueError("SHOP_BOT_TOKEN не должен совпадать с ADMIN_TOKEN")
     store.init_db(db_path, products_path)
     return AppServer(
         (host, port),
         db_path=db_path,
         admin_token=admin_token,
+        bot_token=bot_token,
         static_root=static_root,
         quiet=quiet,
         order_limit=order_limit,
@@ -569,11 +643,13 @@ def main(argv=None) -> int:
     admin_token = os.environ.get("ADMIN_TOKEN", "").strip() or None
     if admin_token is None:
         print("ADMIN_TOKEN не задан: админка отключена (ответ 503).", file=sys.stderr)
+    bot_token = os.environ.get("SHOP_BOT_TOKEN", "").strip() or None
 
     try:
         server = create_server(
             args.host, args.port,
-            db_path=args.db, products_path=args.products, admin_token=admin_token,
+            db_path=args.db, products_path=args.products,
+            admin_token=admin_token, bot_token=bot_token,
         )
     except ValueError as exc:
         print(f"Сервер не запущен: {exc}", file=sys.stderr)
