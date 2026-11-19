@@ -30,6 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import auth
 import captcha
 import mailer
+import roulette
 import store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,6 +51,8 @@ ORDER_GLOBAL_LIMIT = 60            # заказов со всего магази
 ORDER_GLOBAL_WINDOW = 60           # за столько секунд
 EVENT_RATE_LIMIT = 120             # событий с одного IP
 EVENT_RATE_WINDOW = 60
+ROULETTE_RATE_LIMIT = 10           # прокруток колеса (с одного IP, включая отказы «уже крутил»)
+ROULETTE_RATE_WINDOW = 60 * 60     # за час
 
 ADMIN_FAIL_LIMIT = 10              # неверных входов в админку с одного IP
 ADMIN_FAIL_WINDOW = 15 * 60        # за столько секунд; потом блокировка 429
@@ -85,6 +88,7 @@ AUTH_ERRORS = {
     "invalid_credentials": (401, "Неверный логин или пароль"),
     "too_many_attempts": (429, "Слишком много попыток. Попробуйте позже"),
     "too_many_requests": (429, "Слишком много запросов. Попробуйте позже"),
+    "already_spun": (429, "Сегодня колесо уже крутилось. Приходите завтра"),
     "login_required": (401, "Войдите, чтобы продолжить"),
     "code_invalid": (400, "Неверный код. Проверьте письмо и попробуйте снова"),
     "code_expired": (400, "Срок действия кода истёк. Запросите новый"),
@@ -662,6 +666,39 @@ def _captcha_verify(handler, params, query):
     return 200, {"ok": True, "ticket": ticket, "expires_in": captcha.TICKET_TTL}
 
 
+# ---------------------------------------------------------------- колесо фортуны
+
+def _roulette_user(handler):
+    """Колесо только для покупателя со входом. Токен бота и админа пользователя не задают — 401."""
+    token = auth.read_session_token(handler.headers.get("Cookie"))
+    if token is not None:
+        user = _run_auth(handler, store.user_for_session, auth.token_hash(token), store.utc_now())
+        if user is not None:
+            return user
+    raise _auth_error("login_required", message="Войдите, чтобы крутить колесо")
+
+
+def _roulette_status(handler, params, query):
+    user = _roulette_user(handler)
+    state = _run_auth(handler, store.roulette_status, user["id"], roulette.now())
+    return 200, {"ok": True, **state, "prizes": roulette.public_prizes()}
+
+
+def _roulette_spin(handler, params, query):
+    user = _roulette_user(handler)
+    handler._check_rate("roulette", ROULETTE_RATE_LIMIT, ROULETTE_RATE_WINDOW)
+    _require_json(handler)
+    now = roulette.now()
+    # Приз выбирается до записи; если сегодня уже крутил, выбор просто не используется.
+    prize = roulette.pick_prize()
+    result = _run_auth(handler, store.roulette_spin, user["id"], prize["id"], now)
+    if not result["spun"]:
+        error = _auth_error("already_spun")
+        error.body["next_at"] = result["next_at"]
+        raise error
+    return 200, {"ok": True, "prize": prize, "next_at": result["next_at"]}
+
+
 ROUTES = [
     ("GET", re.compile(r"^/api/auth/me$"), _auth_me),
     ("POST", re.compile(r"^/api/auth/register$"), _auth_register),
@@ -671,6 +708,8 @@ ROUTES = [
     ("POST", re.compile(r"^/api/auth/reset/confirm$"), _auth_reset_confirm),
     ("GET", re.compile(r"^/api/captcha/new$"), _captcha_new),
     ("POST", re.compile(r"^/api/captcha/verify$"), _captcha_verify),
+    ("GET", re.compile(r"^/api/roulette/status$"), _roulette_status),
+    ("POST", re.compile(r"^/api/roulette/spin$"), _roulette_spin),
     ("GET", re.compile(r"^/api/products$"), _products_list),
     ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)$"), _product_get),
     ("POST", re.compile(r"^/api/orders$"), _order_create),

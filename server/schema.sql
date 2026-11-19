@@ -113,3 +113,13 @@ CREATE TABLE IF NOT EXISTS captcha_tickets (
     expires_at TEXT NOT NULL,
     used_at    TEXT
 );
+
+-- Колесо фортуны: одна прокрутка на пользователя в сутки (день по Киеву). Приз выбирает сервер.
+CREATE TABLE IF NOT EXISTS roulette_spins (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    day        TEXT NOT NULL,
+    prize_id   TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, day)
+);
