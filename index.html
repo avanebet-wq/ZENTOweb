@@ -40,8 +40,8 @@
         <section class="auth-panel" id="panel-login" role="tabpanel" aria-labelledby="tab-login">
           <form id="login-form" novalidate>
             <div class="field">
-              <label for="l-login">Телефон или почта</label>
-              <input id="l-login" name="login" type="text" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false" aria-describedby="le-login">
+              <label for="l-login">Введите почту или ник</label>
+              <input id="l-login" name="login" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" aria-describedby="le-login">
               <p class="field-error" id="le-login" aria-live="polite" hidden></p>
             </div>
             <div class="field">
@@ -49,6 +49,7 @@
               <input id="l-pass" name="password" type="password" autocomplete="current-password" aria-describedby="le-pass">
               <p class="field-error" id="le-pass" aria-live="polite" hidden></p>
             </div>
+            <p class="forgot-row"><button class="link-btn press" type="button" id="forgot-btn" aria-haspopup="dialog">Забыли пароль?</button></p>
             <p class="form-error" id="login-error" role="alert" hidden></p>
             <button class="btn btn-primary btn-block press" type="submit" id="login-submit">Войти</button>
           </form>
@@ -57,19 +58,10 @@
         <section class="auth-panel" id="panel-register" role="tabpanel" aria-labelledby="tab-register" hidden>
           <form id="register-form" novalidate>
             <div class="field">
-              <label for="r-name">Имя</label>
-              <input id="r-name" name="name" autocomplete="given-name" aria-describedby="re-name">
-              <p class="field-error" id="re-name" aria-live="polite" hidden></p>
-            </div>
-            <div class="field">
-              <label for="r-phone">Телефон</label>
-              <input id="r-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+380 67 123 45 67" aria-describedby="re-phone">
-              <p class="field-error" id="re-phone" aria-live="polite" hidden></p>
-            </div>
-            <div class="field">
-              <label for="r-email">Почта</label>
-              <input id="r-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="name@ukr.net" aria-describedby="re-email">
-              <p class="field-error" id="re-email" aria-live="polite" hidden></p>
+              <label for="r-nick">Ник</label>
+              <input id="r-nick" name="nick" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" aria-describedby="rn-hint re-nick">
+              <p class="field-hint" id="rn-hint">От 3 до 20 символов: буквы, цифры и знак _</p>
+              <p class="field-error" id="re-nick" aria-live="polite" hidden></p>
             </div>
             <div class="field">
               <label for="r-pass">Пароль</label>
@@ -84,10 +76,15 @@
               <input id="r-pass2" name="password2" type="password" autocomplete="new-password" aria-describedby="re-pass2">
               <p class="field-error" id="re-pass2" aria-live="polite" hidden></p>
             </div>
+            <div class="field">
+              <label for="r-email">Почта (необязательно)</label>
+              <input id="r-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="name@ukr.net" aria-describedby="re-email">
+              <p class="field-error" id="re-email" aria-live="polite" hidden></p>
+            </div>
             <div class="consent">
               <label class="check" for="r-consent">
                 <input id="r-consent" name="consent" type="checkbox" aria-describedby="re-consent">
-                <span>Согласен на обработку персональных данных</span>
+                <span>Я принимаю <a href="/rules.html" target="_blank" rel="noopener">правила<span class="visually-hidden"> (откроется в новой вкладке)</span></a> сервиса</span>
               </label>
               <p class="field-error" id="re-consent" aria-live="polite" hidden></p>
             </div>
@@ -98,6 +95,59 @@
       </div>
     </div>
   </section>
+
+  <!-- Окно «Забыли пароль?»: открывается по ссылке на экране входа, в том же стиле -->
+  <dialog class="reset-dialog" id="reset-dialog" aria-labelledby="reset-title">
+    <div class="reset-card glass">
+      <div class="reset-head">
+        <h2 class="reset-title" id="reset-title" tabindex="-1">Восстановление пароля</h2>
+        <button class="icon-btn press" type="button" id="reset-close" aria-label="Закрыть окно">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div id="reset-step1">
+        <form id="reset-request-form" novalidate>
+          <div class="field">
+            <label for="rq-login">Введите почту или ник</label>
+            <input id="rq-login" name="login" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" aria-describedby="rq-error">
+            <p class="field-error" id="rq-error" aria-live="polite" hidden></p>
+          </div>
+          <p class="form-error" id="reset-request-error" role="alert" hidden></p>
+          <button class="btn btn-primary btn-block press" type="submit" id="reset-request-submit">Отправить код</button>
+        </form>
+      </div>
+
+      <div id="reset-step2" hidden>
+        <p class="reset-note" id="reset-note" role="status"></p>
+        <form id="reset-confirm-form" novalidate>
+          <div class="field">
+            <label for="rc-code">Код из письма</label>
+            <input id="rc-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" aria-describedby="rc-code-err">
+            <p class="field-error" id="rc-code-err" aria-live="polite" hidden></p>
+          </div>
+          <div class="field">
+            <label for="rc-pass">Новый пароль</label>
+            <input id="rc-pass" name="password" type="password" autocomplete="new-password" aria-describedby="rc-rules re-rpass">
+            <p class="field-hint" id="rc-rules">От 8 до 128 символов, минимум одна буква и одна цифра.</p>
+            <p class="field-error" id="re-rpass" aria-live="polite" hidden></p>
+          </div>
+          <div class="field">
+            <label for="rc-pass2">Повторите пароль</label>
+            <input id="rc-pass2" name="password2" type="password" autocomplete="new-password" aria-describedby="re-rpass2">
+            <p class="field-error" id="re-rpass2" aria-live="polite" hidden></p>
+          </div>
+          <p class="form-error" id="reset-confirm-error" role="alert" hidden></p>
+          <button class="btn btn-primary btn-block press" type="submit" id="reset-confirm-submit">Сохранить и войти</button>
+        </form>
+        <div class="reset-actions">
+          <button class="link-btn press" type="button" id="reset-resend" disabled>Отправить код снова</button>
+          <span class="reset-timer" id="reset-timer"></span>
+          <button class="link-btn press" type="button" id="reset-back">Изменить почту или ник</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <!-- Сайт: скрыт, пока нет входа. Товары и корзину сюда не выводим до входа -->
   <div class="site" id="site" hidden>

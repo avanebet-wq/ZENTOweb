@@ -55,6 +55,12 @@ ADMIN_PRODUCT_COLUMNS = PUBLIC_PRODUCT_COLUMNS + ", created_at"
 
 PHONE_CHARS_RE = re.compile(r"^\+?[0-9 ()\-.]+$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Ник: 3–20 символов, латиница, кириллица, цифры и _. Пробелов нет.
+NICK_RE = re.compile(r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ0-9_]{3,20}")
+RESET_CODE_RE = re.compile(r"[0-9]{6}")
+RESET_CODE_TTL_SECONDS = 10 * 60      # код действует 10 минут
+RESET_RESEND_SECONDS = 60             # новый код можно запросить не раньше чем через минуту
+RESET_MAX_ATTEMPTS = 5                # неверных вводов на один код
 COLOR_FORBIDDEN_RE = re.compile(r"[<>\"'\\;{}]")
 INT_TEXT_RE = re.compile(r"^\s*-?\d+\s*$")
 LONG_NUMBER_RE = re.compile(r"^\s*[+-]?[0-9]+\s*$")
@@ -150,10 +156,59 @@ def with_retry(func, attempts=DB_RETRY_ATTEMPTS, pause=0.05):
 # ---------------------------------------------------------------- инициализация
 
 def _migrate(conn) -> None:
-    """Добавляет колонки, которых не было в ранней версии схемы."""
+    """Добавляет колонки, которых не было в ранней версии схемы, и пересобирает users по договору 2."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+    _migrate_users(conn)
+
+
+# Та же структура, что в schema.sql. Нужна миграции, чтобы создать users_new.
+USERS_TABLE_SQL = """CREATE TABLE {name} (
+    id                INTEGER PRIMARY KEY,
+    nick              TEXT NOT NULL,
+    nick_lower        TEXT NOT NULL UNIQUE,
+    email             TEXT UNIQUE,
+    password_hash     TEXT NOT NULL,
+    phone             TEXT UNIQUE,
+    created_at        TEXT NOT NULL,
+    rules_accepted_at TEXT NOT NULL
+)"""
+
+
+def _migrate_users(conn) -> None:
+    """Старая таблица users (name, phone обязателен, email обязателен) -> новая (nick, nick_lower, ...).
+
+    Ник = user<id>, rules_accepted_at = created_at, почта и телефон сохраняются, пароли не меняются.
+    Имя из старой таблицы не переносится: в новой схеме колонки нет (заказы хранят имя отдельно).
+    Сессии сохраняются: внешние ключи выключены на время пересборки, иначе DROP TABLE users
+    удалил бы сессии каскадом. Идемпотентно: на новой схеме ничего не делает."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if {"nick", "nick_lower", "rules_accepted_at"} <= columns:
+        return
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(USERS_TABLE_SQL.format(name="users_new"))
+            conn.execute(
+                "INSERT INTO users_new (id, nick, nick_lower, email, password_hash, phone, created_at,"
+                " rules_accepted_at)"
+                " SELECT id, 'user' || id, 'user' || id, email, password_hash, phone, created_at, created_at"
+                " FROM users"
+            )
+            conn.execute("DROP TABLE users")
+            conn.execute("ALTER TABLE users_new RENAME TO users")
+            # Проверяем связи сессий с пользователями. Если что-то не так, миграция откатится.
+            if conn.execute("PRAGMA foreign_key_check(sessions)").fetchall():
+                raise RuntimeError("миграция users: нарушены связи сессий")
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def init_db(db_path, products_path=None) -> None:
@@ -705,44 +760,48 @@ def get_stats(conn, now=None) -> dict:
 # ---------------------------------------------------------------- проверка данных для входа и капчи
 
 LOGIN_FIELD_MAX = 254
-NAME_FORBIDDEN_RE = re.compile(r"[0-9<>]")
 CAPTCHA_ID_RE = re.compile(r"[A-Za-z0-9_-]{16,64}")
 CAPTCHA_KEY_MAX = 64
 
 
+def clean_nick(value) -> str:
+    """Ник как ввёл пользователь (без пробелов по краям). Ошибка — ValueError с текстом для пользователя."""
+    if not isinstance(value, str):
+        raise ValueError("укажите ник")
+    text = value.strip()
+    if not NICK_RE.fullmatch(text):
+        raise ValueError("от 3 до 20 символов: буквы, цифры и знак _, без пробелов")
+    return text
+
+
 def clean_registration(payload) -> dict:
-    """Проверяет все поля регистрации сразу. Возвращает name, phone, email, password. Ошибки — в fields."""
+    """Проверяет поля регистрации сразу: nick, password, password2, email (необязательно).
+    Возвращает nick, email (в нижнем регистре или None), password. Ошибки — в fields.
+    Галочку правил проверяет app.py отдельно (ответ rules_not_accepted)."""
     if not isinstance(payload, dict):
         raise ValidationError({"body": "Нужен JSON-объект с полями регистрации"})
     errors, out = {}, {}
 
     try:
-        name = _text(payload.get("name"), 2, 50)
-        if NAME_FORBIDDEN_RE.search(name):
-            raise ValueError("не должно быть цифр и символов < >")
-        out["name"] = name
+        out["nick"] = clean_nick(payload.get("nick"))
     except ValueError as exc:
-        errors["name"] = str(exc)
+        errors["nick"] = str(exc)
 
-    try:
-        out["phone"] = normalize_phone(payload.get("phone"))
-    except ValueError as exc:
-        errors["phone"] = str(exc)
-
-    try:
-        out["email"] = _email(payload.get("email")).lower()
-    except ValueError as exc:
-        errors["email"] = str(exc)
+    email = payload.get("email")
+    out["email"] = None
+    if email not in (None, ""):
+        try:
+            out["email"] = _email(email).lower()
+        except ValueError as exc:
+            errors["email"] = str(exc)
 
     password = payload.get("password")
-    password_problem = auth.password_error(password, out.get("email", ""))
+    password_problem = auth.password_error(password, out.get("nick", ""))
     if password_problem:
         errors["password"] = password_problem
-    else:
-        out["password"] = password
-
-    if payload.get("consent") is not True:
-        errors["consent"] = "Нужно согласие на обработку персональных данных"
+    if payload.get("password2") != password:
+        errors["password2"] = "Пароли не совпадают"
+    out["password"] = password
 
     if errors:
         raise ValidationError(errors)
@@ -757,7 +816,7 @@ def clean_login(payload):
     login = payload.get("login")
     password = payload.get("password")
     if not isinstance(login, str) or not login.strip() or len(login) > LOGIN_FIELD_MAX:
-        errors["login"] = "укажите почту или телефон"
+        errors["login"] = "укажите почту или ник"
     if not isinstance(password, str) or not password:
         errors["password"] = "укажите пароль"
     if errors:
@@ -765,18 +824,43 @@ def clean_login(payload):
     return login, password
 
 
+def clean_reset_request(payload) -> str:
+    """Форма «забыли пароль»: нужен логин (почта или ник). Возвращает логин."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Нужен JSON-объект с логином"})
+    login = payload.get("login")
+    if not isinstance(login, str) or not login.strip() or len(login) > LOGIN_FIELD_MAX:
+        raise ValidationError({"login": "укажите почту или ник"})
+    return login
+
+
+def clean_reset_confirm(payload):
+    """Форма нового пароля: логин и код из письма (6 цифр). Пароль проверяется позже, после кода."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Нужен JSON-объект с логином и кодом"})
+    errors = {}
+    login = payload.get("login")
+    code = payload.get("code")
+    if not isinstance(login, str) or not login.strip() or len(login) > LOGIN_FIELD_MAX:
+        errors["login"] = "укажите почту или ник"
+    if not isinstance(code, str) or not RESET_CODE_RE.fullmatch(code.strip()):
+        errors["code"] = "введите 6 цифр из письма"
+    if errors:
+        raise ValidationError(errors)
+    return login, code.strip()
+
+
 def login_identity(login: str):
-    """Что введено: ('email', почта) или ('phone', +380...). Не распознано — None (это не ошибка формата)."""
+    """Что введено: ('email', почта) или ('nick', ник в нижнем регистре). Не распознано — None (это не ошибка формата)."""
     text = login.strip()
     if "@" in text:
         email = text.lower()
         if len(email) <= LOGIN_FIELD_MAX and EMAIL_RE.match(email):
             return ("email", email)
         return None
-    try:
-        return ("phone", normalize_phone(text))
-    except ValueError:
-        return None
+    if NICK_RE.fullmatch(text):
+        return ("nick", text.lower())
+    return None
 
 
 def clean_captcha_verify(payload):
@@ -819,13 +903,14 @@ def purge_auth_expired(conn, now) -> None:
 
 
 def _public_user(row) -> dict:
-    return {"id": row["id"], "name": row["name"], "phone": row["phone"], "email": row["email"]}
+    """То, что видит покупатель: id, ник и почта (почта может быть None)."""
+    return {"id": row["id"], "nick": row["nick"], "email": row["email"]}
 
 
 def user_for_session(conn, token_hash, now):
     """Пользователь по хешу токена, если сессия не истекла. Иначе None (гость)."""
     row = conn.execute(
-        "SELECT u.id, u.name, u.phone, u.email FROM sessions s"
+        "SELECT u.id, u.nick, u.email FROM sessions s"
         "  JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ? AND s.expires_at > ?",
         (token_hash, to_iso(now)),
@@ -838,15 +923,21 @@ def find_user_for_login(conn, identity):
     kind, value = identity
     if kind == "email":
         row = conn.execute(
-            "SELECT id, name, phone, email, password_hash FROM users WHERE email = ?", (value,)
+            "SELECT id, nick, email, password_hash FROM users WHERE email = ?", (value,)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT id, name, phone, email, password_hash FROM users WHERE phone = ?", (value,)
+            "SELECT id, nick, email, password_hash FROM users WHERE nick_lower = ?", (value,)
         ).fetchone()
     if row is None:
         return None
     return {**_public_user(row), "password_hash": row["password_hash"]}
+
+
+def find_user_by_login(conn, login):
+    """То же, что find_user_for_login, но по тексту из формы. Не распознано — None."""
+    identity = login_identity(login)
+    return find_user_for_login(conn, identity) if identity else None
 
 
 def create_session(conn, user_id, token_hash, now) -> None:
@@ -867,7 +958,7 @@ def delete_session(conn, token_hash) -> None:
 
 def register_user(conn, data, ticket, password_hash, session_hash, now) -> dict:
     """Создаёт пользователя, гасит билет капчи и открывает сессию — одной транзакцией.
-    Порядок проверок: билет (403), занятость телефона или почты (409)."""
+    Порядок проверок: билет (403), занятость ника (409 nick_taken) или почты (409 email_taken)."""
     stamp = to_iso(now)
     with transaction(conn):
         ticket_hash = auth.token_hash(ticket) if isinstance(ticket, str) and ticket else None
@@ -879,21 +970,24 @@ def register_user(conn, data, ticket, password_hash, session_hash, now) -> dict:
         if row is None or row["used_at"] is not None or row["expires_at"] <= stamp:
             raise Rejected("captcha_required")
 
+        nick_lower = data["nick"].lower()
         taken = {}
         for found in conn.execute(
-            "SELECT phone, email FROM users WHERE phone = ? OR email = ?",
-            (data["phone"], data["email"]),
+            "SELECT nick_lower, email FROM users WHERE nick_lower = ? OR email = ?",
+            (nick_lower, data["email"]),
         ):
-            if found["phone"] == data["phone"]:
-                taken["phone"] = "Этот телефон уже зарегистрирован"
-            if found["email"] == data["email"]:
+            if found["nick_lower"] == nick_lower:
+                taken["nick"] = "Этот ник уже занят"
+            if data["email"] is not None and found["email"] == data["email"]:
                 taken["email"] = "Эта почта уже зарегистрирована"
         if taken:
-            raise Rejected("already_registered", fields=taken)
+            code = "nick_taken" if "nick" in taken else "email_taken"
+            raise Rejected(code, fields=taken)
 
         cur = conn.execute(
-            "INSERT INTO users (name, phone, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-            (data["name"], data["phone"], data["email"], password_hash, stamp),
+            "INSERT INTO users (nick, nick_lower, email, password_hash, created_at, rules_accepted_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (data["nick"], nick_lower, data["email"], password_hash, stamp, stamp),
         )
         user_id = cur.lastrowid
         conn.execute("UPDATE captcha_tickets SET used_at = ? WHERE token_hash = ?", (stamp, ticket_hash))
@@ -902,7 +996,80 @@ def register_user(conn, data, ticket, password_hash, session_hash, now) -> dict:
             (session_hash, user_id, stamp,
              to_iso(now + timedelta(seconds=auth.SESSION_TTL_SECONDS))),
         )
-    return {"id": user_id, "name": data["name"], "phone": data["phone"], "email": data["email"]}
+    return {"id": user_id, "nick": data["nick"], "email": data["email"]}
+
+
+# ---------------------------------------------------------------- восстановление пароля
+
+def reset_begin(conn, user_id, code_hash, now):
+    """Записывает новый код, если прошлый выслан не меньше минуты назад. Возвращает время выдачи или None.
+    None — код уже выслан недавно, письмо отправлять не нужно."""
+    stamp = to_iso(now)
+    with transaction(conn):
+        row = conn.execute("SELECT created_at FROM reset_codes WHERE user_id = ?", (user_id,)).fetchone()
+        if row is not None and row["created_at"] > to_iso(now - timedelta(seconds=RESET_RESEND_SECONDS)):
+            return None
+        conn.execute(
+            "INSERT OR REPLACE INTO reset_codes (user_id, code_hash, created_at, expires_at, attempts, used_at)"
+            " VALUES (?, ?, ?, ?, 0, NULL)",
+            (user_id, code_hash, stamp, to_iso(now + timedelta(seconds=RESET_CODE_TTL_SECONDS))),
+        )
+    return stamp
+
+
+def reset_cancel(conn, user_id, stamp) -> None:
+    """Письмо не ушло: убираем код, чтобы пользователь мог повторить запрос сразу."""
+    with transaction(conn):
+        conn.execute("DELETE FROM reset_codes WHERE user_id = ? AND created_at = ?", (user_id, stamp))
+
+
+def reset_confirm(conn, login, code, password, password2, session_hash, now) -> dict:
+    """Проверяет код и меняет пароль. Меняет пароль, гасит все сессии пользователя и открывает новую.
+
+    Порядок: код (code_invalid / code_expired / code_attempts_exceeded), потом пароль (ValidationError).
+    Неверный код считается попыткой. На шестой попытке код сгорает.
+    Ответы-отказы выходят из транзакции, а не изнутри неё: иначе откат отменил бы счётчик попыток."""
+    stamp = to_iso(now)
+    outcome = "code_invalid"
+    user = None
+    with transaction(conn):
+        user = find_user_by_login(conn, login)
+        reset = None
+        if user is not None:
+            reset = conn.execute(
+                "SELECT code_hash, expires_at, attempts, used_at FROM reset_codes WHERE user_id = ?",
+                (user["id"],),
+            ).fetchone()
+        if reset is None or reset["used_at"] is not None:
+            auth.verify_password(code, auth.dummy_hash())     # то же время, что и при проверке настоящего кода
+        elif reset["expires_at"] <= stamp:
+            outcome = "code_expired"
+        elif reset["attempts"] >= RESET_MAX_ATTEMPTS:
+            conn.execute("UPDATE reset_codes SET used_at = ? WHERE user_id = ?", (stamp, user["id"]))
+            outcome = "code_attempts_exceeded"
+        elif not auth.verify_password(code, reset["code_hash"]):
+            conn.execute("UPDATE reset_codes SET attempts = attempts + 1 WHERE user_id = ?", (user["id"],))
+        else:
+            errors = {}
+            problem = auth.password_error(password, user["nick"])
+            if problem:
+                errors["password"] = problem
+            if password != password2:
+                errors["password2"] = "Пароли не совпадают"
+            if errors:
+                raise ValidationError(errors)       # откат: код остаётся действительным
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                         (auth.hash_password(password), user["id"]))
+            conn.execute("UPDATE reset_codes SET used_at = ? WHERE user_id = ?", (stamp, user["id"]))
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+            conn.execute(
+                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                (session_hash, user["id"], stamp, to_iso(now + timedelta(seconds=auth.SESSION_TTL_SECONDS))),
+            )
+            outcome = "ok"
+    if outcome != "ok":
+        raise Rejected(outcome)
+    return _public_user(user)
 
 
 def captcha_create(conn, challenge_id, expected, now) -> None:
