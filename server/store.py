@@ -18,6 +18,7 @@ from sqlite3 import OperationalError
 from time import sleep
 from zoneinfo import ZoneInfo
 
+import achievements
 import auth
 import captcha
 
@@ -62,6 +63,7 @@ NICK_RE = re.compile(r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ0-9_]{3,20}")
 NICK_LATIN_RE = re.compile(r"[A-Za-z]")
 NICK_CYRILLIC_RE = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]")
 NICK_RESERVED = frozenset({"admin", "zento", "support", "bot", "administrator", "root", "moderator"})
+PUBLIC_ID_DIGITS = 10                 # публичный ID покупателя: столько цифр, с ведущими нулями
 RESET_CODE_RE = re.compile(r"[0-9]{6}")
 RESET_CODE_TTL_SECONDS = 10 * 60      # код действует 10 минут
 RESET_RESEND_SECONDS = 60             # новый код можно запросить не раньше чем через минуту
@@ -110,6 +112,14 @@ def parse_iso(text: str) -> datetime:
 
 def new_product_id() -> str:
     return "p" + secrets.token_hex(6)
+
+
+def _new_public_id(conn) -> str:
+    """Случайный публичный ID из 10 цифр, которого ещё нет у других покупателей. Вызывать в транзакции."""
+    while True:
+        candidate = f"{secrets.randbelow(10 ** PUBLIC_ID_DIGITS):0{PUBLIC_ID_DIGITS}d}"
+        if conn.execute("SELECT 1 FROM users WHERE public_id = ?", (candidate,)).fetchone() is None:
+            return candidate
 
 
 def is_too_long_number(text) -> bool:
@@ -173,6 +183,9 @@ def _migrate(conn) -> None:
         "bio": "TEXT NOT NULL DEFAULT ''",
         "nick_changed_at": "TEXT",
     })
+    _migrate_public_ids(conn)
+    seed_achievements(conn)
+    _backfill_achievements(conn, utc_now())
 
 
 def _add_missing_columns(conn, table, definitions) -> None:
@@ -180,6 +193,69 @@ def _add_missing_columns(conn, table, definitions) -> None:
     for name, definition in definitions.items():
         if name not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def _migrate_public_ids(conn) -> None:
+    """Колонка users.public_id и публичный ID всем покупателям, у кого его ещё нет. Идемпотентно.
+
+    SQLite не умеет добавить колонку с UNIQUE, поэтому в старой базе уникальность даёт индекс.
+    Пересобранная таблица (USERS_TABLE_SQL) уже содержит колонку, для неё только заполнение."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if "public_id" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN public_id TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users (public_id)")
+    with transaction(conn):
+        missing = [row["id"] for row in conn.execute(
+            "SELECT id FROM users WHERE public_id IS NULL ORDER BY id"
+        ).fetchall()]
+        for user_id in missing:
+            conn.execute(
+                "UPDATE users SET public_id = ? WHERE id = ?", (_new_public_id(conn), user_id)
+            )
+
+
+def seed_achievements(conn) -> None:
+    """Каталог достижений из achievements.CATALOG. Уже существующие строки не меняем."""
+    with transaction(conn):
+        for item in achievements.CATALOG:
+            conn.execute(
+                "INSERT OR IGNORE INTO achievements (code, title, description, how_to, image)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (item["code"], item["title"], item["description"], item["how_to"], item["image"]),
+            )
+
+
+def _backfill_achievements(conn, now) -> None:
+    """Задним числом выдаёт достижения тем, кто уже выполнил условие до их появления. Идемпотентно.
+
+    first_login — всем с аккаунтом (дата регистрации), profile_photo — у кого есть аватар,
+    profile_bio — у кого описание непустое. first_purchase сюда не входит: его выдаёт админ."""
+    stamp = to_iso(now)
+    with transaction(conn):
+        conn.execute(
+            "INSERT OR IGNORE INTO user_achievements (user_id, code, granted_at)"
+            " SELECT id, ?, created_at FROM users",
+            (achievements.FIRST_LOGIN,),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO user_achievements (user_id, code, granted_at)"
+            " SELECT user_id, ?, updated_at FROM user_images WHERE kind = 'avatar'",
+            (achievements.PROFILE_PHOTO,),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO user_achievements (user_id, code, granted_at)"
+            " SELECT id, ?, ? FROM users WHERE bio <> ''",
+            (achievements.PROFILE_BIO, stamp),
+        )
+
+
+def _grant(conn, user_id, code, now) -> bool:
+    """Выдаёт достижение. True — выдано сейчас, False — уже было. Вызывать внутри transaction()."""
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO user_achievements (user_id, code, granted_at) VALUES (?, ?, ?)",
+        (user_id, code, to_iso(now)),
+    )
+    return cur.rowcount == 1
 
 
 # Та же структура, что в schema.sql. Нужна миграции, чтобы создать users_new.
@@ -193,7 +269,8 @@ USERS_TABLE_SQL = """CREATE TABLE {name} (
     created_at        TEXT NOT NULL,
     rules_accepted_at TEXT NOT NULL,
     bio               TEXT NOT NULL DEFAULT '',
-    nick_changed_at   TEXT
+    nick_changed_at   TEXT,
+    public_id         TEXT UNIQUE
 )"""
 
 
@@ -1016,9 +1093,10 @@ def register_user(conn, data, ticket, password_hash, session_hash, now) -> dict:
             raise Rejected(code, fields=taken)
 
         cur = conn.execute(
-            "INSERT INTO users (nick, nick_lower, email, password_hash, created_at, rules_accepted_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (data["nick"], nick_lower, data["email"], password_hash, stamp, stamp),
+            "INSERT INTO users (nick, nick_lower, email, password_hash, created_at, rules_accepted_at, public_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (data["nick"], nick_lower, data["email"], password_hash, stamp, stamp,
+             _new_public_id(conn)),
         )
         user_id = cur.lastrowid
         conn.execute("UPDATE captcha_tickets SET used_at = ? WHERE token_hash = ?", (stamp, ticket_hash))
@@ -1027,6 +1105,7 @@ def register_user(conn, data, ticket, password_hash, session_hash, now) -> dict:
             (session_hash, user_id, stamp,
              to_iso(now + timedelta(seconds=auth.SESSION_TTL_SECONDS))),
         )
+        _grant(conn, user_id, achievements.FIRST_LOGIN, now)
     return {"id": user_id, "nick": data["nick"], "email": data["email"]}
 
 
@@ -1220,11 +1299,34 @@ def _picture_fields(row) -> dict:
 
 
 PROFILE_SELECT = (
-    "SELECT u.id, u.nick, u.email, u.bio, u.nick_changed_at,"
+    "SELECT u.id, u.nick, u.email, u.bio, u.nick_changed_at, u.public_id, u.created_at,"
     " (SELECT sha256 FROM user_images WHERE user_id = u.id AND kind = 'avatar') AS avatar_sha,"
     " (SELECT sha256 FROM user_images WHERE user_id = u.id AND kind = 'banner') AS banner_sha"
     " FROM users u WHERE "
 )
+
+
+def _achievement_list(conn, user_id) -> list:
+    """Все достижения по порядку каталога. earned — выдано ли покупателю, granted_at — когда (или None)."""
+    rows = conn.execute(
+        "SELECT a.code, a.title, a.description, a.how_to, a.image, ua.granted_at"
+        " FROM achievements a"
+        "  LEFT JOIN user_achievements ua ON ua.code = a.code AND ua.user_id = ?"
+        " ORDER BY a.rowid",
+        (user_id,),
+    ).fetchall()
+    return [
+        {
+            "code": row["code"],
+            "title": row["title"],
+            "description": row["description"],
+            "how_to": row["how_to"],
+            "image_url": achievements.IMAGE_URL_PREFIX + row["image"],
+            "earned": row["granted_at"] is not None,
+            "granted_at": row["granted_at"],
+        }
+        for row in rows
+    ]
 
 
 def public_profile(conn, nick_lower):
@@ -1247,6 +1349,9 @@ def own_profile(conn, user_id, now):
         "bio": row["bio"],
         **_picture_fields(row),
         "nick_next_change_at": _next_nick_change(row["nick_changed_at"], now),
+        "public_id": row["public_id"],
+        "created_at": row["created_at"],
+        "achievements": _achievement_list(conn, user_id),
     }
 
 
@@ -1304,6 +1409,10 @@ def update_profile(conn, user_id, payload, now) -> dict:
             # Имена колонок заданы только в этом коде, значения идут параметрами.
             assignments = ", ".join(f"{column} = ?" for column in changes)
             conn.execute(f"UPDATE users SET {assignments} WHERE id = ?", [*changes.values(), user_id])
+        # Описание непустое после сохранения — достижение «О себе» (повтор не дублирует).
+        saved_bio = conn.execute("SELECT bio FROM users WHERE id = ?", (user_id,)).fetchone()["bio"]
+        if saved_bio:
+            _grant(conn, user_id, achievements.PROFILE_BIO, now)
     return own_profile(conn, user_id, now)
 
 
@@ -1331,6 +1440,8 @@ def save_image(conn, user_id, kind, data, meta, now) -> dict:
             (user_id, kind, meta["content_type"], data, meta["width"], meta["height"],
              meta["sha256"], to_iso(now)),
         )
+        if kind == "avatar":
+            _grant(conn, user_id, achievements.PROFILE_PHOTO, now)
     return own_profile(conn, user_id, now)
 
 
@@ -1339,3 +1450,38 @@ def delete_image(conn, user_id, kind, now) -> dict:
     with transaction(conn):
         conn.execute("DELETE FROM user_images WHERE user_id = ? AND kind = ?", (user_id, kind))
     return own_profile(conn, user_id, now)
+
+
+# ---------------------------------------------------------------- достижения: выдача админом
+
+def clean_achievement_grant(payload):
+    """Тело POST /api/admin/achievements/grant: login (почта или ник) и code. Возвращает (login, code)."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Ожидается объект с полями login и code"})
+    errors = {}
+    login = payload.get("login")
+    if not isinstance(login, str) or login_identity(login) is None:
+        errors["login"] = "укажите почту или ник покупателя"
+    code = payload.get("code")
+    if not isinstance(code, str) or code not in achievements.CODES:
+        errors["code"] = "неизвестное достижение"
+    if errors:
+        raise ValidationError(errors)
+    return login.strip(), code
+
+
+def grant_achievement_by_login(conn, payload, now) -> dict:
+    """Выдаёт достижение покупателю, найденному по почте или нику. Повтор ничего не меняет.
+
+    Неизвестный логин — Rejected('not_found') (404), неверные поля — ValidationError (400)."""
+    login, code = clean_achievement_grant(payload)
+    kind, value = login_identity(login)
+    column = "email" if kind == "email" else "nick_lower"  # имя колонки из двух констант, значение — параметр
+    with transaction(conn):
+        user = conn.execute(
+            f"SELECT id, nick, public_id FROM users WHERE {column} = ?", (value,)
+        ).fetchone()
+        if user is None:
+            raise Rejected("not_found")
+        granted = _grant(conn, user["id"], code, now)
+    return {"granted": granted, "user": {"nick": user["nick"], "public_id": user["public_id"]}}

@@ -25,11 +25,7 @@
     btn: $('auth-btn'),
     guest: $('avatar-guest'),
     initials: $('avatar-initials'),
-    menu: $('acc-menu'),
-    accName: $('acc-name'),
-    accMail: $('acc-mail'),
     logout: $('logout-btn'),
-    profileOpen: $('profile-open'),
     gate: $('gate'),
     gateCard: $('gate-card'),
     gateDown: $('gate-down'),
@@ -260,17 +256,13 @@
     user = u && typeof u === 'object' ? u : null;
     if (user) {
       var nick = String(user.nick || '');
-      var mail = String(user.email || '');
       els.guest.toggleAttribute('hidden', true);
       els.initials.hidden = false;
       els.initials.textContent = initialsOf(nick);
       els.btn.classList.add('is-user');
-      els.btn.setAttribute('aria-label', 'Аккаунт: ' + (nick || 'вход выполнен') + '. Открыть меню');
-      els.btn.setAttribute('aria-haspopup', 'true');
-      els.btn.setAttribute('aria-expanded', 'false');
-      els.accName.textContent = nick || 'Аккаунт';
-      els.accMail.textContent = mail;
-      els.accMail.hidden = !mail;
+      // Клик по аватару открывает профиль на весь экран
+      els.btn.setAttribute('aria-label', 'Аккаунт: ' + (nick || 'вход выполнен') + '. Открыть профиль');
+      els.btn.setAttribute('aria-haspopup', 'dialog');
       if (!('avatar_v' in user)) loadAvatarInfo();
     } else {
       els.guest.toggleAttribute('hidden', false);
@@ -279,23 +271,9 @@
       els.btn.classList.remove('is-user');
       els.btn.setAttribute('aria-label', 'Войти или зарегистрироваться');
       els.btn.setAttribute('aria-haspopup', 'dialog');
-      els.btn.removeAttribute('aria-expanded');
-      closeMenu();
     }
     paintAvatar();
     swapAnim();
-  }
-
-  function isMenuOpen() { return !els.menu.hidden; }
-  function openMenu() {
-    els.menu.hidden = false;
-    els.btn.setAttribute('aria-expanded', 'true');
-    els.logout.focus();
-  }
-  function closeMenu() {
-    if (!isMenuOpen()) return;
-    els.menu.hidden = true;
-    els.btn.setAttribute('aria-expanded', 'false');
   }
 
   /* ---------- Экран входа и сайт ---------- */
@@ -350,7 +328,6 @@
   // byUser — выход нажал пользователь: тогда фокус на вкладку «Вход»
   function leaveSite(byUser) {
     setUser(null);
-    closeMenu();
     showGate('guest');
     if (byUser) els.tabLogin.focus({ preventScroll: true });
     emitSession('out');
@@ -783,31 +760,16 @@
 
   /* ---------- Привязка событий ---------- */
   function bind() {
-    // Гость шапку не видит, поэтому меню только для вошедшего
+    // Гость шапку не видит. Вошедший нажимает на аватар: открывается профиль на весь экран (его ведёт profile.js)
     els.btn.addEventListener('click', function () {
       if (!user) return;
-      if (isMenuOpen()) closeMenu(); else openMenu();
-    });
-
-    document.addEventListener('click', function (e) {
-      if (!isMenuOpen()) return;
-      var t = e.target;
-      if (els.menu.contains(t) || els.btn.contains(t)) return;
-      closeMenu();
-    });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && isMenuOpen()) { closeMenu(); els.btn.focus(); }
-    });
-
-    els.logout.addEventListener('click', logout);
-
-    // «Мой профиль» в меню: закрываем меню и открываем окно (его ведёт profile.js)
-    if (els.profileOpen) els.profileOpen.addEventListener('click', function () {
-      closeMenu();
       try {
         document.dispatchEvent(new CustomEvent('zento:profile-open', { detail: { opener: els.btn } }));
       } catch (e) { /* старые браузеры: окна не будет, остальное работает */ }
     });
+
+    // Выход теперь в «Настройках» профиля (кнопка #logout-btn внутри окна профиля)
+    els.logout.addEventListener('click', logout);
 
     // Профиль сохранил новые данные: обновляем ник и фото в шапке
     document.addEventListener('zento:user-updated', function (e) {
