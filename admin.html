@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZENTO — Админка</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="styles.css">
+  <script>document.documentElement.classList.add('js');</script>
+  <script src="app.js" defer></script>
+</head>
+<body data-page="admin">
+  <noscript><p class="container notice">Для работы админки нужен JavaScript.</p></noscript>
+  <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <header class="site-header">
+    <div class="admin-head">
+      <a class="logo js-nav" href="index.html" aria-label="ZENTO, на сайт">ZENTO</a>
+      <span class="admin-title">Админка</span>
+      <button class="btn btn-ghost btn-small press" type="button" id="logout" hidden>Выйти</button>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <!-- Вход по токену -->
+    <section class="glass panel login" id="login-view" aria-labelledby="login-title">
+      <h1 id="login-title">Вход в админку</h1>
+      <p class="muted">Введите токен доступа. Он хранится только в этой вкладке браузера и пропадёт, когда вкладку закроют.</p>
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label for="token">Токен доступа</label>
+          <input id="token" type="password" autocomplete="off" spellcheck="false" aria-describedby="token-error">
+          <p class="field-error" id="token-error" hidden></p>
+        </div>
+        <button class="btn btn-primary btn-block press" type="submit" id="login-btn">Войти</button>
+      </form>
+    </section>
+
+    <div id="admin-view" hidden>
+      <div class="tabs" role="tablist" aria-label="Разделы админки">
+        <button class="tab press" type="button" role="tab" id="tab-stats" data-tab="stats" aria-controls="panel-stats" aria-selected="true" tabindex="0">Статистика</button>
+        <button class="tab press" type="button" role="tab" id="tab-orders" data-tab="orders" aria-controls="panel-orders" aria-selected="false" tabindex="-1">Заказы</button>
+        <button class="tab press" type="button" role="tab" id="tab-customers" data-tab="customers" aria-controls="panel-customers" aria-selected="false" tabindex="-1">Покупатели</button>
+        <button class="tab press" type="button" role="tab" id="tab-products" data-tab="products" aria-controls="panel-products" aria-selected="false" tabindex="-1">Товары</button>
+      </div>
+
+      <!-- Статистика -->
+      <section class="glass panel" role="tabpanel" id="panel-stats" data-panel="stats" aria-labelledby="tab-stats">
+        <div class="panel-head">
+          <h2>Статистика</h2>
+          <button class="btn btn-ghost btn-small press" type="button" data-refresh="stats">Обновить</button>
+        </div>
+        <div class="stats">
+          <div class="stat glass"><p class="stat-label">Заказы</p><p class="stat-value" id="stat-orders">—</p></div>
+          <div class="stat glass"><p class="stat-label">Выручка</p><p class="stat-value" id="stat-revenue">—</p></div>
+          <div class="stat glass"><p class="stat-label">Покупатели</p><p class="stat-value" id="stat-customers">—</p></div>
+          <div class="stat glass"><p class="stat-label">Просмотры</p><p class="stat-value" id="stat-views">—</p></div>
+        </div>
+        <div class="split">
+          <div>
+            <h3>По дням</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th scope="col">День</th><th scope="col">Заказов</th><th scope="col">Выручка</th></tr></thead>
+                <tbody id="days-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h3>Популярные товары</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th scope="col">Товар</th><th scope="col">Продано, шт.</th></tr></thead>
+                <tbody id="top-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Заказы -->
+      <section class="glass panel" role="tabpanel" id="panel-orders" data-panel="orders" aria-labelledby="tab-orders" hidden>
+        <div class="panel-head">
+          <h2>Заказы</h2>
+          <button class="btn btn-ghost btn-small press" type="button" data-refresh="orders">Обновить</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">№</th><th scope="col">Дата</th><th scope="col">Покупатель</th><th scope="col">Товары</th><th scope="col">Сумма</th><th scope="col">Статус</th></tr></thead>
+            <tbody id="orders-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Покупатели -->
+      <section class="glass panel" role="tabpanel" id="panel-customers" data-panel="customers" aria-labelledby="tab-customers" hidden>
+        <div class="panel-head">
+          <h2>Покупатели</h2>
+          <button class="btn btn-ghost btn-small press" type="button" data-refresh="customers">Обновить</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Имя</th><th scope="col">Телефон</th><th scope="col">Почта</th><th scope="col">Адрес</th><th scope="col">Заказов</th></tr></thead>
+            <tbody id="customers-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Товары -->
+      <section class="glass panel" role="tabpanel" id="panel-products" data-panel="products" aria-labelledby="tab-products" hidden>
+        <div class="panel-head">
+          <h2>Товары</h2>
+          <button class="btn btn-ghost btn-small press" type="button" data-refresh="products">Обновить</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Товар</th><th scope="col">Категория</th><th scope="col">Цена, ₽</th><th scope="col">Остаток, шт.</th><th scope="col"><span class="visually-hidden">Действие</span></th></tr></thead>
+            <tbody id="products-body"></tbody>
+          </table>
+        </div>
+        <details class="add-product">
+          <summary>Добавить товар</summary>
+          <form class="add-form" id="add-form" novalidate>
+            <div class="field">
+              <label for="add-name">Название</label>
+              <input id="add-name" required>
+            </div>
+            <div class="field">
+              <label for="add-category">Категория</label>
+              <input id="add-category" required>
+            </div>
+            <div class="field">
+              <label for="add-price">Цена, ₽</label>
+              <input id="add-price" type="number" inputmode="numeric" min="0" step="1" required>
+            </div>
+            <div class="field">
+              <label for="add-stock">Остаток, шт.</label>
+              <input id="add-stock" type="number" inputmode="numeric" min="0" step="1" required>
+            </div>
+            <div class="field">
+              <label for="add-color">Цвет плитки</label>
+              <input id="add-color" type="color" value="#1E40AF">
+            </div>
+            <div class="field field-full">
+              <label for="add-desc">Описание</label>
+              <textarea id="add-desc" rows="3"></textarea>
+            </div>
+            <p class="field-error field-full" id="add-error" hidden></p>
+            <button class="btn btn-primary press field-full" type="submit">Добавить товар</button>
+          </form>
+        </details>
+      </section>
+    </div>
+  </main>
+
+  <footer class="container">
+    <p class="muted"><a class="js-nav" href="index.html">← Вернуться на сайт</a></p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
