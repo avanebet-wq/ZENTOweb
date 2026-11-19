@@ -89,7 +89,7 @@ class ProfileAccessTest(ProfileTestBase):
     def test_profile_answers_are_not_cached(self):
         resp = self.request("GET", "/api/profile/me", headers=self.anna_cookie)
         self.assertEqual(resp.headers["Cache-Control"], "no-store")
-        resp = self.request("GET", "/api/users/anna/profile")
+        resp = self.request("GET", "/api/users/anna/profile", headers=self.anna_cookie)
         self.assertEqual(resp.headers["Cache-Control"], "no-store")
 
 
@@ -108,22 +108,29 @@ class ProfileReadTest(ProfileTestBase):
         self.assertIsNone(user["avatar_v"])
         self.assertIsNone(user["nick_next_change_at"])
 
-    def test_public_profile_hides_email_and_id(self):
-        resp = self.request("GET", "/api/users/ANNA/profile")
+    def test_public_profile_hides_email_and_id_from_logged_in(self):
+        resp = self.request("GET", "/api/users/ANNA/profile", headers=self.anna_cookie)
         self.assertEqual(resp.status, 200, resp.body)
         self.assertEqual(set(resp.body["user"]), PUBLIC_KEYS)
         self.assertEqual(resp.body["user"]["nick"], "Anna")
         self.assertEqual(resp.body["user"]["bio"], "Старое описание")
         self.assertNotIn("anna@example.com", json.dumps(resp.body))
 
+    def test_public_profile_needs_session_for_guest_bot_and_admin(self):
+        for headers in ({}, {"Authorization": f"Bearer {SHOP_BOT}"}, {"Authorization": f"Bearer {TOKEN}"}):
+            resp = self.request("GET", "/api/users/anna/profile", headers=headers)
+            self.assertEqual(resp.status, 401, resp.body)
+            self.assertEqual(resp.body["error"], "login_required")
+            self.assertNotIn("user", resp.body)
+
     def test_public_profile_unknown_nick_is_404(self):
-        resp = self.request("GET", "/api/users/nobody_here/profile")
+        resp = self.request("GET", "/api/users/nobody_here/profile", headers=self.anna_cookie)
         self.assertEqual(resp.status, 404)
 
     def test_public_profile_flags_follow_uploads(self):
         from test_images import png_bytes
         self.upload("banner", png_bytes(40, 20), "image/png", self.anna_cookie)
-        user = self.request("GET", "/api/users/anna/profile").body["user"]
+        user = self.request("GET", "/api/users/anna/profile", headers=self.anna_cookie).body["user"]
         self.assertFalse(user["has_avatar"])
         self.assertTrue(user["has_banner"])
         self.assertEqual(len(user["banner_v"]), 16)
