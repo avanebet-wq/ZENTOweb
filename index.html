@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#070912">
   <title>ZENTO — Магазин</title>
   <meta name="description" content="ZENTO — интернет-магазин: выбирайте товары, добавляйте их в корзину и оформляйте заказ.">
   <link rel="stylesheet" href="styles.css">
@@ -224,6 +226,7 @@
   <!-- Корзина: выдвигается справа; внутри три экрана: корзина, оформление, спасибо -->
   <dialog class="drawer" id="cart-dialog" aria-labelledby="cart-title">
     <div class="drawer-body glass surface">
+      <span class="sheet-handle" aria-hidden="true"></span>
       <div class="drawer-head">
         <h2 id="cart-title" tabindex="-1">Корзина</h2>
         <button class="icon-btn press" type="button" data-close aria-label="Закрыть корзину">
@@ -238,7 +241,7 @@
         </section>
 
         <section id="view-checkout" hidden>
-          <button class="link-btn press" type="button" id="back-cart">← Назад в корзину</button>
+          <button class="link-btn link-back press" type="button" id="back-cart"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Назад в корзину</button>
           <h3 class="checkout-title">Контакты для заказа</h3>
           <form id="order-form" novalidate>
             <div class="field">
@@ -292,7 +295,7 @@
     <div class="profile-body surface">
       <header class="pf-top">
         <button class="icon-btn press" type="button" id="profile-close" aria-label="Назад">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 5l-7 7 7 7"/></svg>
         </button>
         <h2 id="profile-title" tabindex="-1">Профиль</h2>
         <span class="pf-top-spacer" aria-hidden="true"></span>
