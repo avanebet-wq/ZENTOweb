@@ -50,3 +50,11 @@ class DbRateLimiterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GlobalOrderCapTest(unittest.TestCase):
+    def test_global_bucket_counts_all_clients_together(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            limiter = app.RateLimiter(clock=lambda: 100.0, db_path=Path(tmp) / "g.db")
+            results = [limiter.try_hit("orders_all", "all", 3, 60) for _ in range(4)]
+            self.assertEqual(results, [True, True, True, False])
