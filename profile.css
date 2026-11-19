@@ -1,0 +1,127 @@
+/* ===== Редактор профиля («Мой профиль»). Всё новое — здесь; общие токены и кнопки — в styles.css ===== */
+
+/* Пункт меню: отступ до «Выйти» */
+#profile-open { margin: 0 0 8px; }
+
+/* Окно: лист снизу на телефоне, по центру на компьютере (правила dialog.sheet в styles.css) */
+.profile-dialog { max-height: 92vh; max-height: 92dvh; }
+.profile-body { display: flex; flex-direction: column; max-height: inherit; }
+.profile-head {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 4px 16px 8px 20px;
+}
+.profile-head h2 { margin: 0; font-size: 1.4rem; outline: none; }
+
+.profile-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 4px 20px 8px;
+}
+.pf-loading { padding: 28px 0; text-align: center; display: grid; justify-items: center; gap: 12px; }
+.pf-loading p { margin: 0; }
+
+/* Обложка: баннер 3:1, аватар наполовину выступает за его нижний край */
+.pf-cover { position: relative; margin: 0 0 58px; }
+.pf-banner {
+  position: relative; display: block; width: 100%; aspect-ratio: 3 / 1; overflow: hidden;
+  padding: 0; border: 0; border-radius: 22px; cursor: pointer;
+  background: linear-gradient(135deg, #1E40AF 0%, #7C3AED 100%); color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.pf-view { position: absolute; inset: 0; display: grid; place-items: center; }
+.pf-view > .pf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pf-pill {
+  position: absolute; right: 10px; bottom: 10px; padding: 4px 10px; border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55); color: #fff; font-size: 0.82rem; font-weight: 700;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.pf-avatar {
+  position: absolute; left: 16px; bottom: -48px; width: 96px; height: 96px; overflow: visible;
+  padding: 0; border: 4px solid var(--surface-solid); border-radius: 50%; cursor: pointer;
+  background: linear-gradient(135deg, #1E40AF 0%, #7C3AED 100%); color: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+}
+.pf-avatar .pf-view { border-radius: 50%; overflow: hidden; }
+.pf-avatar .pf-view > .pf-img { border-radius: 50%; }
+.pf-initials { font-size: 1.9rem; font-weight: 800; letter-spacing: 0.03em; line-height: 1; }
+.pf-badge {
+  position: absolute; right: -2px; bottom: -2px; width: 32px; height: 32px;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--color-primary); color: #fff; border: 2px solid var(--surface-solid);
+}
+/* Кнопка-фото занимает всю площадь, поэтому фокус виден по краю */
+.pf-banner:focus-visible, .pf-avatar:focus-visible { outline-offset: 3px; }
+
+.pf-photo-actions { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 10px; }
+.pf-photo-actions .link-btn { min-height: 44px; }
+#pf-photo-err { margin: 0 0 10px; }
+#pf-photo-err:not([hidden]) { animation: err-in 280ms var(--ease-out) both; }
+
+/* Поля профиля: общие .field из styles.css; счётчик описания справа */
+.profile-scroll .field:last-child { margin-bottom: 4px; }
+.pf-count { margin: -2px 0 0; text-align: right; font-size: 0.86rem; color: var(--color-muted-foreground); font-variant-numeric: tabular-nums; }
+.pf-count.is-over { color: var(--color-danger); font-weight: 700; }
+#pf-nick:disabled { color: var(--color-muted-foreground); opacity: 1; }
+
+/* Кадрирование: поверх того же окна */
+#pf-crop h3 { margin: 4px 0 6px; font-size: 1.2rem; outline: none; }
+#pf-crop .field-hint { margin: 0 0 14px; }
+.pf-canvas {
+  display: block; width: 100%; max-width: 360px; height: auto; margin: 0 auto 14px;
+  border-radius: 20px; background: rgba(15, 23, 42, 0.08);
+  box-shadow: inset 0 0 0 1px var(--glass-rim-soft);
+  touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.pf-canvas:active { cursor: grabbing; }
+.pf-zoom { max-width: 360px; margin: 0 auto 14px; }
+.pf-zoom input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--color-primary); }
+.pf-crop-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+@media (min-width: 720px) { .pf-crop-actions { max-width: 360px; margin-left: auto; margin-right: auto; } }
+
+/* Вложенный блок «Отменить изменения?» */
+.pf-confirm {
+  margin: 0 20px 12px; padding: 16px; border-radius: 22px;
+  background: var(--surface-solid); border: 1px solid var(--color-warning);
+}
+.pf-confirm h3 { margin: 0 0 6px; font-size: 1.15rem; outline: none; }
+.pf-confirm p { margin: 0 0 14px; }
+.pf-confirm-actions { display: grid; gap: 10px; }
+@media (min-width: 480px) { .pf-confirm-actions { grid-template-columns: 1fr 1fr; } }
+.pf-confirm-actions .btn { width: 100%; }
+
+/* Нижняя панель: точка несохранённых изменений, статус, кнопки */
+.pf-foot {
+  flex: 0 0 auto; display: grid; gap: 10px;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--glass-rim-soft);
+}
+.pf-foot[hidden] { display: none; }
+.pf-dirty {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  font-size: 0.9rem; font-weight: 600; color: var(--color-muted-foreground);
+}
+.pf-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--color-warning); box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.18); }
+.pf-status:empty { display: none; }
+.pf-status .form-error { margin: 0; display: grid; gap: 8px; }
+.pf-status .form-error button { justify-self: start; }
+.pf-foot-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pf-foot-actions .btn { width: 100%; }
+.pf-foot-actions .btn[aria-busy="true"] { cursor: progress; }
+
+/* Экран после сохранения: зелёная галочка, как после заказа */
+#pf-done { padding: 22px 4px 26px; }
+#pf-done h3 { outline: none; }
+
+/* Аватар в шапке: фото вместо инициалов (класс ставит auth.js) */
+.avatar-btn .avatar-photo {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  border-radius: 50%; object-fit: cover;
+}
+
+@media (min-width: 720px) {
+  .profile-dialog .profile-body { max-height: min(86vh, 800px); }
+  .pf-banner { border-radius: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pf-photo-err:not([hidden]) { animation: none; }
+}

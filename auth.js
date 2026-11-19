@@ -29,6 +29,7 @@
     accName: $('acc-name'),
     accMail: $('acc-mail'),
     logout: $('logout-btn'),
+    profileOpen: $('profile-open'),
     gate: $('gate'),
     gateCard: $('gate-card'),
     gateDown: $('gate-down'),
@@ -216,6 +217,45 @@
     restart(els.btn, 'is-swap');
   }
 
+  // Фото в шапке: берём картинку с сервера; если фото нет или не открылось, остаются инициалы
+  var photo = null;
+  function avatarSrc(u) {
+    if (!u || !u.has_avatar || !u.nick) return '';
+    return '/api/users/' + encodeURIComponent(String(u.nick)) + '/avatar?v=' + encodeURIComponent(String(u.avatar_v || 0));
+  }
+  function paintAvatar() {
+    var src = user ? avatarSrc(user) : '';
+    if (src && !photo) {
+      photo = document.createElement('img');
+      photo.className = 'avatar-photo';
+      photo.alt = '';
+      photo.decoding = 'async';
+      photo.hidden = true;
+      photo.addEventListener('error', function () {
+        photo.hidden = true;
+        els.initials.hidden = false;
+      });
+      els.btn.appendChild(photo);
+    }
+    if (photo && photo.getAttribute('data-src') !== src) {
+      photo.setAttribute('data-src', src);
+      photo.hidden = !src;
+      if (src) photo.src = src;
+    }
+    els.initials.hidden = !user || !!(photo && !photo.hidden);
+  }
+
+  // В ответе входа данных о фото может не быть: тогда один раз берём их из профиля
+  function loadAvatarInfo() {
+    var me = user;
+    request('GET', '/api/profile/me').then(function (r) {
+      var d = r.data || {};
+      if (user !== me || r.status !== 200 || d.ok !== true || !d.user) return;
+      user = Object.assign({}, me, { has_avatar: !!d.user.has_avatar, avatar_v: d.user.avatar_v || 0 });
+      paintAvatar();
+    }).catch(function () { /* без фото остаются инициалы */ });
+  }
+
   function setUser(u) {
     user = u && typeof u === 'object' ? u : null;
     if (user) {
@@ -231,6 +271,7 @@
       els.accName.textContent = nick || 'Аккаунт';
       els.accMail.textContent = mail;
       els.accMail.hidden = !mail;
+      if (!('avatar_v' in user)) loadAvatarInfo();
     } else {
       els.guest.toggleAttribute('hidden', false);
       els.initials.hidden = true;
@@ -241,6 +282,7 @@
       els.btn.removeAttribute('aria-expanded');
       closeMenu();
     }
+    paintAvatar();
     swapAnim();
   }
 
@@ -756,6 +798,25 @@
     });
 
     els.logout.addEventListener('click', logout);
+
+    // «Мой профиль» в меню: закрываем меню и открываем окно (его ведёт profile.js)
+    els.profileOpen.addEventListener('click', function () {
+      closeMenu();
+      try {
+        document.dispatchEvent(new CustomEvent('zento:profile-open', { detail: { opener: els.btn } }));
+      } catch (e) { /* старые браузеры: окна не будет, остальное работает */ }
+    });
+
+    // Профиль сохранил новые данные: обновляем ник и фото в шапке
+    document.addEventListener('zento:user-updated', function (e) {
+      var u = e.detail && e.detail.user;
+      if (!user || !u || typeof u !== 'object') return;
+      var next = Object.assign({}, user);
+      ['nick', 'email', 'has_avatar', 'avatar_v'].forEach(function (k) {
+        if (u[k] !== undefined) next[k] = u[k];
+      });
+      setUser(next);
+    });
 
     // Магазин узнал, что вход кончился (401 на товарах): снова экран входа
     document.addEventListener('zento:need-login', function () {
