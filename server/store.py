@@ -17,6 +17,9 @@ from sqlite3 import OperationalError
 from time import sleep
 from zoneinfo import ZoneInfo
 
+import auth
+import captcha
+
 SERVER_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = SERVER_DIR / "schema.sql"
 
@@ -68,6 +71,16 @@ class ValidationError(Exception):
 
 class NotFound(Exception):
     """Запись не найдена."""
+
+
+class Rejected(Exception):
+    """Отказ по правилам входа и капчи. code — короткий код для ответа (см. app.py), fields — ошибки полей."""
+
+    def __init__(self, code, fields=None, message=None):
+        super().__init__(code)
+        self.code = code
+        self.fields = fields
+        self.message = message
 
 
 # ---------------------------------------------------------------- время и id
@@ -154,6 +167,7 @@ def init_db(db_path, products_path=None) -> None:
             seed_products(conn, products_path)
         with transaction(conn):
             expire_stale_orders(conn)
+            purge_auth_expired(conn, utc_now())
     finally:
         conn.close()
 
@@ -686,3 +700,244 @@ def get_stats(conn, now=None) -> dict:
         "top_products": top_products,
         "orders_by_day": orders_by_day,
     }
+
+
+# ---------------------------------------------------------------- проверка данных для входа и капчи
+
+LOGIN_FIELD_MAX = 254
+NAME_FORBIDDEN_RE = re.compile(r"[0-9<>]")
+CAPTCHA_ID_RE = re.compile(r"[A-Za-z0-9_-]{16,64}")
+CAPTCHA_KEY_MAX = 64
+
+
+def clean_registration(payload) -> dict:
+    """Проверяет все поля регистрации сразу. Возвращает name, phone, email, password. Ошибки — в fields."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Нужен JSON-объект с полями регистрации"})
+    errors, out = {}, {}
+
+    try:
+        name = _text(payload.get("name"), 2, 50)
+        if NAME_FORBIDDEN_RE.search(name):
+            raise ValueError("не должно быть цифр и символов < >")
+        out["name"] = name
+    except ValueError as exc:
+        errors["name"] = str(exc)
+
+    try:
+        out["phone"] = normalize_phone(payload.get("phone"))
+    except ValueError as exc:
+        errors["phone"] = str(exc)
+
+    try:
+        out["email"] = _email(payload.get("email")).lower()
+    except ValueError as exc:
+        errors["email"] = str(exc)
+
+    password = payload.get("password")
+    password_problem = auth.password_error(password, out.get("email", ""))
+    if password_problem:
+        errors["password"] = password_problem
+    else:
+        out["password"] = password
+
+    if payload.get("consent") is not True:
+        errors["consent"] = "Нужно согласие на обработку персональных данных"
+
+    if errors:
+        raise ValidationError(errors)
+    return out
+
+
+def clean_login(payload):
+    """Проверяет форму входа: логин и пароль должны быть непустыми строками. Возвращает (логин, пароль)."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Нужен JSON-объект с логином и паролем"})
+    errors = {}
+    login = payload.get("login")
+    password = payload.get("password")
+    if not isinstance(login, str) or not login.strip() or len(login) > LOGIN_FIELD_MAX:
+        errors["login"] = "укажите почту или телефон"
+    if not isinstance(password, str) or not password:
+        errors["password"] = "укажите пароль"
+    if errors:
+        raise ValidationError(errors)
+    return login, password
+
+
+def login_identity(login: str):
+    """Что введено: ('email', почта) или ('phone', +380...). Не распознано — None (это не ошибка формата)."""
+    text = login.strip()
+    if "@" in text:
+        email = text.lower()
+        if len(email) <= LOGIN_FIELD_MAX and EMAIL_RE.match(email):
+            return ("email", email)
+        return None
+    try:
+        return ("phone", normalize_phone(text))
+    except ValueError:
+        return None
+
+
+def clean_captcha_verify(payload):
+    """Форма проверки капчи. Возвращает (challenge_id, placements), где placements — {токен: ячейка или None}."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Нужен JSON-объект с challenge_id и placements"})
+    errors = {}
+    challenge_id = payload.get("challenge_id")
+    if not isinstance(challenge_id, str) or not CAPTCHA_ID_RE.fullmatch(challenge_id):
+        errors["challenge_id"] = "неверный идентификатор задания"
+    placements = payload.get("placements")
+    clean = {}
+    if not isinstance(placements, dict) or len(placements) > captcha.PIECES:
+        errors["placements"] = f"ожидается объект с не больше {captcha.PIECES} кусочками"
+    else:
+        for token, cell in placements.items():
+            if not isinstance(token, str) or not 1 <= len(token) <= CAPTCHA_KEY_MAX:
+                errors["placements"] = "неверный кусочек"
+                break
+            if cell is None:
+                clean[token] = None
+            elif isinstance(cell, bool) or not isinstance(cell, int) or not 0 <= cell < captcha.PIECES:
+                errors["placements"] = f"ячейка — целое от 0 до {captcha.PIECES - 1}"
+                break
+            else:
+                clean[token] = cell
+    if errors:
+        raise ValidationError(errors)
+    return challenge_id, clean
+
+
+# ---------------------------------------------------------------- пользователи, сессии, капча (SQL)
+
+def purge_auth_expired(conn, now) -> None:
+    """Удаляет истёкшие сессии, задания и билеты. Вызывать внутри transaction() или при старте."""
+    stamp = to_iso(now)
+    conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (stamp,))
+    conn.execute("DELETE FROM captcha_challenges WHERE expires_at <= ?", (stamp,))
+    conn.execute("DELETE FROM captcha_tickets WHERE expires_at <= ?", (stamp,))
+
+
+def _public_user(row) -> dict:
+    return {"id": row["id"], "name": row["name"], "phone": row["phone"], "email": row["email"]}
+
+
+def user_for_session(conn, token_hash, now):
+    """Пользователь по хешу токена, если сессия не истекла. Иначе None (гость)."""
+    row = conn.execute(
+        "SELECT u.id, u.name, u.phone, u.email FROM sessions s"
+        "  JOIN users u ON u.id = s.user_id"
+        " WHERE s.token_hash = ? AND s.expires_at > ?",
+        (token_hash, to_iso(now)),
+    ).fetchone()
+    return _public_user(row) if row is not None else None
+
+
+def find_user_for_login(conn, identity):
+    """Строка пользователя с хешем пароля или None. identity — из login_identity()."""
+    kind, value = identity
+    if kind == "email":
+        row = conn.execute(
+            "SELECT id, name, phone, email, password_hash FROM users WHERE email = ?", (value,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT id, name, phone, email, password_hash FROM users WHERE phone = ?", (value,)
+        ).fetchone()
+    if row is None:
+        return None
+    return {**_public_user(row), "password_hash": row["password_hash"]}
+
+
+def create_session(conn, user_id, token_hash, now) -> None:
+    created = to_iso(now)
+    expires = to_iso(now + timedelta(seconds=auth.SESSION_TTL_SECONDS))
+    with transaction(conn):
+        conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (created,))
+        conn.execute(
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (token_hash, user_id, created, expires),
+        )
+
+
+def delete_session(conn, token_hash) -> None:
+    with transaction(conn):
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+
+def register_user(conn, data, ticket, password_hash, session_hash, now) -> dict:
+    """Создаёт пользователя, гасит билет капчи и открывает сессию — одной транзакцией.
+    Порядок проверок: билет (403), занятость телефона или почты (409)."""
+    stamp = to_iso(now)
+    with transaction(conn):
+        ticket_hash = auth.token_hash(ticket) if isinstance(ticket, str) and ticket else None
+        row = None
+        if ticket_hash is not None:
+            row = conn.execute(
+                "SELECT used_at, expires_at FROM captcha_tickets WHERE token_hash = ?", (ticket_hash,)
+            ).fetchone()
+        if row is None or row["used_at"] is not None or row["expires_at"] <= stamp:
+            raise Rejected("captcha_required")
+
+        taken = {}
+        for found in conn.execute(
+            "SELECT phone, email FROM users WHERE phone = ? OR email = ?",
+            (data["phone"], data["email"]),
+        ):
+            if found["phone"] == data["phone"]:
+                taken["phone"] = "Этот телефон уже зарегистрирован"
+            if found["email"] == data["email"]:
+                taken["email"] = "Эта почта уже зарегистрирована"
+        if taken:
+            raise Rejected("already_registered", fields=taken)
+
+        cur = conn.execute(
+            "INSERT INTO users (name, phone, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+            (data["name"], data["phone"], data["email"], password_hash, stamp),
+        )
+        user_id = cur.lastrowid
+        conn.execute("UPDATE captcha_tickets SET used_at = ? WHERE token_hash = ?", (stamp, ticket_hash))
+        conn.execute(
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (session_hash, user_id, stamp,
+             to_iso(now + timedelta(seconds=auth.SESSION_TTL_SECONDS))),
+        )
+    return {"id": user_id, "name": data["name"], "phone": data["phone"], "email": data["email"]}
+
+
+def captcha_create(conn, challenge_id, expected, now) -> None:
+    with transaction(conn):
+        purge_auth_expired(conn, now)
+        conn.execute(
+            "INSERT INTO captcha_challenges (id, expected, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (challenge_id, json.dumps(expected, ensure_ascii=False), to_iso(now),
+             to_iso(now + timedelta(seconds=captcha.CHALLENGE_TTL))),
+        )
+
+
+def captcha_verify(conn, challenge_id, placements, ticket_hash, now) -> str:
+    """Сверяет расстановку. Возвращает 'incomplete', 'wrong' или 'ok'.
+    Задание гаснет на 'wrong' и на 'ok'; на 'incomplete' не гаснет. Билет создаётся только на 'ok'.
+    Истёкшее, использованное или несуществующее задание — Rejected('captcha_expired')."""
+    stamp = to_iso(now)
+    with transaction(conn):
+        row = conn.execute(
+            "SELECT expected, expires_at, used_at FROM captcha_challenges WHERE id = ?", (challenge_id,)
+        ).fetchone()
+        if row is None or row["used_at"] is not None or row["expires_at"] <= stamp:
+            raise Rejected("captcha_expired")
+        expected = json.loads(row["expected"])
+        if set(placements) - set(expected):
+            raise ValidationError({"placements": "неизвестный кусочек"})
+        outcome = captcha.evaluate(expected, placements)
+        if outcome == "incomplete":
+            return outcome
+        conn.execute(
+            "UPDATE captcha_challenges SET used_at = ? WHERE id = ? AND used_at IS NULL", (stamp, challenge_id)
+        )
+        if outcome == "ok":
+            conn.execute(
+                "INSERT INTO captcha_tickets (token_hash, created_at, expires_at) VALUES (?, ?, ?)",
+                (ticket_hash, stamp, to_iso(now + timedelta(seconds=captcha.TICKET_TTL))),
+            )
+    return outcome
