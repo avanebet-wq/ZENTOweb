@@ -1,0 +1,31 @@
+[
+  { "id": 1, "name": "Наушники ZENTO Air", "category": "Аудио", "price": 7990, "description": "Беспроводные наушники с шумоподавлением и кейсом для зарядки. До 30 часов работы вместе с кейсом.", "color": "#1E40AF", "stock": 24, "tags": ["top"] },
+  { "id": 2, "name": "Колонка ZENTO Boom", "category": "Аудио", "price": 5490, "old_price": 6990, "description": "Портативная колонка с защитой от влаги и ярким звуком для прогулок и поездок.", "color": "#7C3AED", "stock": 12, "tags": ["top", "sale"] },
+  { "id": 3, "name": "Наушники ZENTO Wire", "category": "Аудио", "price": 2490, "description": "Проводные вкладыши с микрофоном для звонков и музыки. Лёгкие и надёжные.", "color": "#0E7490", "stock": 40, "tags": [] },
+  { "id": 4, "name": "Микрофон ZENTO Pro", "category": "Аудио", "price": 12990, "description": "Конденсаторный микрофон для записи подкастов и видео. Сейчас нет в наличии.", "color": "#BE185D", "stock": 0, "tags": ["new"] },
+
+  { "id": 5, "name": "Power bank ZENTO 20", "category": "Гаджеты", "price": 3290, "description": "Аккумулятор на 20 000 мАч с быстрой зарядкой и двумя USB-портами.", "color": "#047857", "stock": 18, "tags": ["top"] },
+  { "id": 6, "name": "Чехол ZENTO Slim", "category": "Гаджеты", "price": 990, "old_price": 1490, "description": "Тонкий чехол из матового пластика с защитой углов от падений.", "color": "#4338CA", "stock": 60, "tags": ["new", "sale"] },
+  { "id": 7, "name": "Смарт-часы ZENTO Fit", "category": "Гаджеты", "price": 6490, "description": "Часы с пульсометром, шагомером и уведомлениями с телефона.", "color": "#B45309", "stock": 9, "tags": ["new"] },
+  { "id": 8, "name": "Зарядка ZENTO GaN 65", "category": "Гаджеты", "price": 2190, "old_price": 2790, "description": "Компактное зарядное устройство 65 Вт для ноутбука и телефона.", "color": "#1D4ED8", "stock": 25, "tags": ["sale"] },
+
+  { "id": 9, "name": "Лампа ZENTO Glow", "category": "Умный дом", "price": 1890, "description": "Настольная лампа с регулировкой яркости и оттенка света. Управление со смартфона.", "color": "#6D28D9", "stock": 33, "tags": ["top"] },
+  { "id": 10, "name": "Розетка ZENTO Smart", "category": "Умный дом", "price": 1290, "description": "Розетка с таймером и удалённым управлением через приложение.", "color": "#166534", "stock": 50, "tags": [] },
+  { "id": 11, "name": "Датчик ZENTO Home", "category": "Умный дом", "price": 1590, "description": "Датчик открытия дверей и окон с тихим сигналом. Ожидаем поставку.", "color": "#9D174D", "stock": 0, "tags": ["new"] },
+  { "id": 12, "name": "Камера ZENTO View", "category": "Умный дом", "price": 4990, "old_price": 5990, "description": "Комнатная камера 2K с ночной съёмкой и уведомлениями о движении.", "color": "#0F766E", "stock": 7, "tags": ["sale"] },
+
+  { "id": 13, "name": "Коврик ZENTO Grip", "category": "Фитнес", "price": 1790, "description": "Нескользящий коврик толщиной 6 мм для йоги и домашних тренировок.", "color": "#C2410C", "stock": 30, "tags": ["top"] },
+  { "id": 14, "name": "Гантели ZENTO 5 кг", "category": "Фитнес", "price": 2990, "description": "Пара неопреновых гантелей с удобной рукоятью, не катятся по полу.", "color": "#1E3A8A", "stock": 14, "tags": [] },
+  { "id": 15, "name": "Бутылка ZENTO Flow", "category": "Фитнес", "price": 890, "old_price": 1190, "description": "Бутылка на 750 мл, которая держит температуру до 12 часов.", "color": "#0E7490", "stock": 45, "tags": ["new", "sale"] },
+  { "id": 16, "name": "Эспандеры ZENTO Band", "category": "Фитнес", "price": 590, "description": "Набор из трёх эспандеров разной жёсткости для дома и дороги.", "color": "#7E22CE", "stock": 80, "tags": [] },
+
+  { "id": 17, "name": "Клавиатура ZENTO Type", "category": "Офис", "price": 5290, "description": "Беспроводная клавиатура с тихими клавишами и подставкой под запястья.", "color": "#334155", "stock": 11, "tags": ["top"] },
+  { "id": 18, "name": "Мышь ZENTO Glide", "category": "Офис", "price": 1990, "description": "Бесшумная мышь с двумя режимами подключения: Bluetooth и USB-приёмник.", "color": "#1E40AF", "stock": 38, "tags": ["new"] },
+  { "id": 19, "name": "Коврик ZENTO Desk", "category": "Офис", "price": 1190, "description": "Большой коврик для стола с прошитой кромкой из мягкой ткани. Сейчас нет в наличии.", "color": "#4D7C0F", "stock": 0, "tags": [] },
+  { "id": 20, "name": "Веб-камера ZENTO Clear", "category": "Офис", "price": 3490, "old_price": 3990, "description": "Камера 1080p с микрофоном и автофокусом для видеозвонков.", "color": "#831843", "stock": 16, "tags": ["sale"] },
+
+  { "id": 21, "name": "Рюкзак ZENTO Trail 30", "category": "Путешествия", "price": 4490, "description": "Водостойкий рюкзак на 30 литров с отделением для ноутбука до 16 дюймов.", "color": "#166534", "stock": 10, "tags": ["top"] },
+  { "id": 22, "name": "Адаптер ZENTO World", "category": "Путешествия", "price": 1490, "description": "Универсальный переходник для розеток в более чем 150 странах.", "color": "#7C2D12", "stock": 42, "tags": ["new"] },
+  { "id": 23, "name": "Органайзер ZENTO Pack", "category": "Путешествия", "price": 1290, "description": "Набор из пяти кубиков для одежды, обуви и мелочей в чемодан.", "color": "#6B21A8", "stock": 27, "tags": [] },
+  { "id": 24, "name": "Термос ZENTO Trek", "category": "Путешествия", "price": 2190, "old_price": 2690, "description": "Термос из нержавеющей стали на 500 мл. Сохраняет тепло до 12 часов.", "color": "#0C4A6E", "stock": 4, "tags": ["sale"] }
+]

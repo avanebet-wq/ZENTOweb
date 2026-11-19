@@ -25,7 +25,9 @@ jobs:
       - name: Prepare only public site files
         run: |
           mkdir -p site
-          cp index.html styles.css site/
+          cp index.html styles.css app.js boot.js admin.html site/
+          mkdir -p site/data
+          cp data/products.json site/data/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
