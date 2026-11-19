@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#070912">
   <title>ZENTO — Каталог</title>
   <meta name="description" content="ZENTO — каталог товаров: выбирайте товары, добавляйте их в корзину и оформляйте заказ.">
   <link rel="stylesheet" href="styles.css">
@@ -12,6 +14,7 @@
   <script src="app.js" defer></script>
 </head>
 <body data-page="shop">
+
   <!-- Экран входа: обязательный. Пока сайт не знает, что вы вошли, он на весь экран, а магазин скрыт -->
   <section class="gate" id="gate" aria-label="Вход в ZENTO">
     <div class="gate-inner">
@@ -153,16 +156,10 @@
     <header class="site-header">
       <div class="header-inner">
         <div class="avatar-wrap">
-          <button class="avatar-btn press" type="button" id="auth-btn" aria-label="Аккаунт">
+          <button class="avatar-btn press" type="button" id="auth-btn" aria-label="Аккаунт" aria-haspopup="dialog">
             <svg class="avatar-guest" id="avatar-guest" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.4-3.8 4.2-5.7 7.5-5.7s6.1 1.9 7.5 5.7"/></svg>
             <span class="avatar-initials" id="avatar-initials" hidden aria-hidden="true"></span>
           </button>
-          <div class="acc-menu" id="acc-menu" hidden>
-            <p class="acc-name" id="acc-name"></p>
-            <p class="acc-mail muted" id="acc-mail"></p>
-            <button class="btn btn-ghost btn-small press" type="button" id="profile-open">Мой профиль</button>
-            <button class="btn btn-ghost btn-small press" type="button" id="logout-btn">Выйти</button>
-          </div>
         </div>
         <a class="logo" href="index.html" aria-label="ZENTO, на главную"><img src="assets/logo.png" alt="ZENTO" width="944" height="200"></a>
         <button class="cart-btn press" type="button" id="cart-open" aria-label="Корзина, товаров: 0">
@@ -174,7 +171,7 @@
 
     <main id="top">
       <div class="container">
-        <p><a class="link-btn press js-nav" href="index.html">← На главную</a></p>
+        <p><a class="link-btn link-back press js-nav" href="index.html"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>На главную</a></p>
         <h1>Каталог</h1>
       </div>
 
@@ -220,7 +217,7 @@
     </main>
 
     <div class="container">
-      <footer class="site-footer">
+      <footer class="site-footer glass">
         <p>© ZENTO. Все права защищены.</p>
       </footer>
     </div>
@@ -237,7 +234,7 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
           </button>
         </div>
-        <div class="sheet-visual"><span class="art art-xl" id="p-art"></span></div>
+        <div class="sheet-visual"><span class="art art-xl" id="p-art" aria-hidden="true"></span></div>
         <h2 id="p-title"></h2>
         <p class="stock" id="p-stock"></p>
         <p class="p-desc" id="p-desc"></p>
@@ -252,6 +249,7 @@
   <!-- Корзина: выдвигается справа; внутри три экрана: корзина, оформление, спасибо -->
   <dialog class="drawer" id="cart-dialog" aria-labelledby="cart-title">
     <div class="drawer-body glass surface">
+      <span class="sheet-handle" aria-hidden="true"></span>
       <div class="drawer-head">
         <h2 id="cart-title" tabindex="-1">Корзина</h2>
         <button class="icon-btn press" type="button" data-close aria-label="Закрыть корзину">
@@ -266,7 +264,7 @@
         </section>
 
         <section id="view-checkout" hidden>
-          <button class="link-btn press" type="button" id="back-cart">← Назад в корзину</button>
+          <button class="link-btn link-back press" type="button" id="back-cart"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Назад в корзину</button>
           <h3 class="checkout-title">Контакты для заказа</h3>
           <form id="order-form" novalidate>
             <div class="field">
@@ -317,12 +315,14 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="captcha.js" defer></script>
   <script src="auth.js" defer></script>
-<script src="profile.js" defer></script>
-<dialog class="profile-screen" id="profile-dialog" aria-labelledby="profile-title">
+  <script src="profile.js" defer></script>
+  <!-- Мой профиль: экран на весь экран. Открывает клик по аватару в шапке (auth.js), ведёт profile.js.
+       Экраны: профиль, настройки, кадрирование и «сохранено». Данные с сервера выводим через textContent -->
+  <dialog class="profile-screen" id="profile-dialog" aria-labelledby="profile-title">
     <div class="profile-body surface">
       <header class="pf-top">
         <button class="icon-btn press" type="button" id="profile-close" aria-label="Назад">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 5l-7 7 7 7"/></svg>
         </button>
         <h2 id="profile-title" tabindex="-1">Профиль</h2>
         <span class="pf-top-spacer" aria-hidden="true"></span>
