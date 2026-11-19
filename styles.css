@@ -679,11 +679,41 @@ td .muted { font-size: 0.88rem; }
 .acc-menu .btn { width: 100%; }
 @keyframes menu-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } to { opacity: 1; transform: none; } }
 
-/* Диалог входа: появление и переключение вкладок */
-dialog.auth-dialog[open] .sheet-body { animation: auth-in 440ms var(--ease-out) both; }
-@keyframes auth-in { from { opacity: 0; transform: translateY(28px) scale(0.98); } to { opacity: 1; transform: none; } }
-.auth-dialog .sheet-top { margin-bottom: 4px; }
-.auth-dialog h2 { margin: 0 0 14px; font-size: 1.5rem; }
+/* ===== Экран входа: обязательный, на весь экран, сайт под ним скрыт ===== */
+.gate {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; overflow-y: auto; overscroll-behavior: contain;
+  padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  transition: opacity 380ms var(--ease-out), transform 380ms var(--ease-out);
+}
+/* Уход экрана: мягко растворяется, сайт проявляется под ним */
+.gate.is-leaving { opacity: 0; transform: scale(1.015); pointer-events: none; }
+/* Центр по вертикали, но без обрезки сверху, если форма регистрации длинная */
+.gate-inner { width: 100%; max-width: 440px; margin: auto; display: grid; gap: 22px; }
+.gate-logo {
+  justify-self: center; display: block; width: min(240px, 66vw); height: auto;
+  filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.28));
+  animation: gate-in 620ms var(--ease-out) both;
+}
+/* Карточка-стекло с кромкой и свечением из логотипа; блюр — на компьютере */
+.gate-card {
+  width: 100%; padding: 22px 20px 20px; border-radius: 32px;
+  background: var(--surface);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-inner), 0 0 0 1px var(--highlight), 0 0 28px var(--edge-glow);
+}
+.gate-card:not([hidden]) { animation: gate-in 460ms var(--ease-out) 120ms both; }
+.gate-title { margin: 0 0 16px; text-align: center; font-size: clamp(1.3rem, 5vw, 1.6rem); line-height: 1.25; }
+.gate-msg { margin: 0; padding: 14px 6px; text-align: center; font-size: 1.05rem; font-weight: 600; }
+@keyframes gate-in { from { opacity: 0; transform: translateY(18px) scale(0.98); } to { opacity: 1; transform: none; } }
+/* Телефон: плотный фон вместо блюра, чтобы не тормозило */
+@media (max-width: 719px) {
+  .gate-card { background: var(--surface-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+/* Сайт проявляется после входа */
+.site.is-entering { animation: site-in 520ms var(--ease-out) both; }
+@keyframes site-in { from { opacity: 0; } to { opacity: 1; } }
+
 .auth-tabs {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 0 18px; padding: 4px;
   border: 1px solid var(--glass-rim-soft); border-radius: 999px; background: var(--glass-bg-strong);

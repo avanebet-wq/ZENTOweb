@@ -79,6 +79,7 @@ AUTH_ERRORS = {
     "invalid_credentials": (401, "Неверный логин или пароль"),
     "too_many_attempts": (429, "Слишком много попыток. Попробуйте позже"),
     "too_many_requests": (429, "Слишком много запросов. Попробуйте позже"),
+    "login_required": (401, "Войдите, чтобы продолжить"),
 }
 
 # Эти папки никогда не отдаются как статика (сравнение без учёта регистра).
@@ -326,7 +327,21 @@ def _admin_text_id(text):
     return text
 
 
+def _require_shopper(handler, message):
+    """Товары и заказы открыты только для входа: активная сессия покупателя, токен бота или админский токен.
+    Иначе 401 login_required. Сессия проверяется той же функцией, что и в /api/auth/me."""
+    if handler._role() is not None:
+        return
+    token = auth.read_session_token(handler.headers.get("Cookie"))
+    if token is not None:
+        user = _run_auth(handler, store.user_for_session, auth.token_hash(token), store.utc_now())
+        if user is not None:
+            return
+    raise _auth_error("login_required", message=message)
+
+
 def _products_list(handler, params, query):
+    _require_shopper(handler, "Войдите, чтобы смотреть товары")
     category = (query.get("category") or "").strip() or None
     search = (query.get("q") or "").strip() or None
     if search and len(search) > store.MAX_SEARCH_LEN:
@@ -335,6 +350,7 @@ def _products_list(handler, params, query):
 
 
 def _product_get(handler, params, query):
+    _require_shopper(handler, "Войдите, чтобы смотреть товары")
     product = _run(handler, store.get_product, params["id"])
     if product is None:
         raise ApiError(404, {"error": "not found"})
@@ -342,6 +358,7 @@ def _product_get(handler, params, query):
 
 
 def _order_create(handler, params, query):
+    _require_shopper(handler, "Войдите, чтобы оформить заказ")
     handler._check_rate("orders", handler.server.order_limit, ORDER_RATE_WINDOW)
     if not handler.server.limiter.try_hit("orders_all", "all", ORDER_GLOBAL_LIMIT, ORDER_GLOBAL_WINDOW):
         raise ApiError(429, {"error": "too many requests"})
@@ -713,7 +730,7 @@ class Handler(BaseHTTPRequestHandler):
         if scheme.lower() != "bearer" or not token.strip():
             return None
         given = token.strip().encode("utf-8")
-        if hmac.compare_digest(given, self.server.admin_token.encode("utf-8")):
+        if self.server.admin_token and hmac.compare_digest(given, self.server.admin_token.encode("utf-8")):
             return "admin"
         if self.server.bot_token and hmac.compare_digest(given, self.server.bot_token.encode("utf-8")):
             return "bot"
