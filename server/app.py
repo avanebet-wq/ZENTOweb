@@ -65,6 +65,27 @@ CONTENT_SECURITY_POLICY = (
 )
 
 
+def pick_client_ip(forwarded_for, peer_ip, trust_proxy):
+    """IP клиента для лимитов. За прокси (TRUST_PROXY=1) берём последний адрес из
+    X-Forwarded-For: его добавил доверенный прокси, а не клиент. Иначе — адрес соединения."""
+    if not trust_proxy or not forwarded_for:
+        return peer_ip
+    parts = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+    if not parts:
+        return peer_ip
+    candidate = parts[-1]
+    if re.fullmatch(r"[0-9a-fA-F:.]{2,45}", candidate):
+        return candidate
+    return peer_ip
+
+
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "").strip() == "1"
+
+
+def _client_ip(self):
+    return pick_client_ip(self.headers.get("X-Forwarded-For"), self.client_address[0], TRUST_PROXY)
+
+
 class ApiError(Exception):
     """Ответ с ошибкой: статус и тело JSON."""
 
@@ -319,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/admin" or path.startswith("/api/admin/"):
             if not self.server.admin_token:
                 raise ApiError(503, {"error": "admin disabled"})
-            ip = self.client_address[0]
+            ip = _client_ip(self)
             if self.server.limiter.is_over("admin", ip, ADMIN_FAIL_LIMIT, ADMIN_FAIL_WINDOW):
                 raise ApiError(429, {"error": "too many requests"})
             if not self._is_admin():
@@ -340,7 +361,7 @@ class Handler(BaseHTTPRequestHandler):
         raise ApiError(404, {"error": "not found"})
 
     def _check_rate(self, bucket, limit, window):
-        if not self.server.limiter.try_hit(bucket, self.client_address[0], limit, window):
+        if not self.server.limiter.try_hit(bucket, _client_ip(self), limit, window):
             raise ApiError(429, {"error": "too many requests"})
 
     def _is_admin(self):
