@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import sqlite3
@@ -23,6 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import auth
+import captcha
 import store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +51,31 @@ EVENT_RATE_WINDOW = 60
 ADMIN_FAIL_LIMIT = 10              # неверных входов в админку с одного IP
 ADMIN_FAIL_WINDOW = 15 * 60        # за столько секунд; потом блокировка 429
 MIN_ADMIN_TOKEN_LENGTH = 32
+
+# Лимиты входа, регистрации и капчи: (сколько попаданий, за сколько секунд). Можно переопределить в тестах.
+DEFAULT_AUTH_LIMITS = {
+    "register": (10, 60 * 60),         # попыток регистрации с IP за час
+    "login_key": (5, 15 * 60),         # неудачных входов на один логин (почту или телефон) за 15 минут
+    "login_ip": (20, 15 * 60),         # неудачных входов с одного IP за 15 минут
+    "captcha_new": (30, 10 * 60),      # новых заданий капчи с IP за 10 минут
+    "captcha_verify": (20, 10 * 60),   # проверок капчи с IP за 10 минут
+}
+
+# Ответы для /api/auth/* и /api/captcha/*: код, статус и текст по умолчанию.
+AUTH_ERRORS = {
+    "validation_error": (400, "Проверьте заполненные поля"),
+    "unsupported_media_type": (415, "Отправьте данные в формате JSON"),
+    "payload_too_large": (413, "Слишком большой запрос"),
+    "captcha_required": (403, "Подтвердите, что вы не робот, и попробуйте снова"),
+    "captcha_incomplete": (400, "Соберите все четыре части картинки"),
+    "captcha_wrong": (400, "Части стоят не на своих местах. Попробуйте ещё раз"),
+    "captcha_expired": (410, "Проверка устарела. Начните заново"),
+    "captcha_unavailable": (503, "Проверка временно недоступна"),
+    "already_registered": (409, "Такой покупатель уже зарегистрирован"),
+    "invalid_credentials": (401, "Неверный логин или пароль"),
+    "too_many_attempts": (429, "Слишком много попыток. Попробуйте позже"),
+    "too_many_requests": (429, "Слишком много запросов. Попробуйте позже"),
+}
 
 # Эти папки никогда не отдаются как статика (сравнение без учёта регистра).
 HIDDEN_DIRS = {"server", "tests", "data"}
@@ -89,10 +118,11 @@ def _client_ip(self):
 class ApiError(Exception):
     """Ответ с ошибкой: статус и тело JSON."""
 
-    def __init__(self, status, body):
+    def __init__(self, status, body, headers=()):
         super().__init__(status)
         self.status = status
         self.body = body
+        self.headers = tuple(headers)
 
 
 # ---------------------------------------------------------------- лимиты
@@ -198,6 +228,24 @@ class RateLimiter:
                          (bucket, key, self._clock()))
         finally:
             conn.close()
+
+    def retry_after(self, bucket, key, window) -> int:
+        """Через сколько целых секунд самое старое попадание в окне выйдет из него (минимум 1)."""
+        now = self._clock()
+        if not self._db_path:
+            with self._lock:
+                hits, now = self._window(bucket, key, window)
+                oldest = hits[0] if hits else now
+        else:
+            conn = self._connect()
+            try:
+                oldest = conn.execute("SELECT MIN(ts) FROM rate_hits WHERE bucket = ? AND key = ? AND ts > ?",
+                                      (bucket, key, now - window)).fetchone()[0]
+            finally:
+                conn.close()
+            if oldest is None:
+                oldest = now
+        return max(1, math.ceil(oldest + window - now))
 
 
 # ---------------------------------------------------------------- статика
@@ -332,7 +380,187 @@ def _admin_product_patch(handler, params, query):
     return 200, _run(handler, store.update_product, product_id, payload)
 
 
+# ---------------------------------------------------------------- вход, регистрация, капча
+
+def _auth_error(code, fields=None, message=None, headers=()):
+    """Ошибка в формате контракта: ok=false, error, message и fields (только при ошибках полей)."""
+    status, default_message = AUTH_ERRORS[code]
+    body = {"ok": False, "error": code, "message": message or default_message}
+    if fields is not None:
+        body["fields"] = fields
+    return ApiError(status, body, headers)
+
+
+def _clean(check, payload):
+    """Запускает проверку формы; ошибки полей превращаются в ответ 400."""
+    try:
+        return check(payload)
+    except store.ValidationError as exc:
+        raise _auth_error("validation_error", exc.fields, exc.message) from None
+
+
+def _require_json(handler):
+    media = handler.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    if media != "application/json":
+        raise _auth_error("unsupported_media_type")
+
+
+def _auth_json(handler):
+    """Тело POST для входа и капчи: нужен Content-Type JSON и объект внутри."""
+    _require_json(handler)
+    state = getattr(handler, "_body_state", "no-length")
+    if state == "too-large":
+        raise _auth_error("payload_too_large")
+    if state == "ok":
+        try:
+            data = json.loads(handler._body.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            return data
+    raise _auth_error("validation_error", {"body": "Нужен JSON-объект"})
+
+
+def _run_auth(handler, func, *args):
+    """Как _run, но ошибки store превращаются в ответы контракта (с кодом и текстом)."""
+    def attempt():
+        conn = store.connect(handler.server.db_path)
+        try:
+            return func(conn, *args)
+        finally:
+            conn.close()
+
+    try:
+        return store.with_retry(attempt)
+    except store.ValidationError as exc:
+        raise _auth_error("validation_error", exc.fields, exc.message) from None
+    except store.Rejected as exc:
+        raise _auth_error(exc.code, exc.fields, exc.message) from None
+
+
+def _hit_auth(handler, name, code):
+    """Считает попытку по лимиту из DEFAULT_AUTH_LIMITS. Лимит исчерпан — 429 с Retry-After."""
+    limit, window = handler.server.auth_limits[name]
+    ip = _client_ip(handler)
+    limiter = handler.server.limiter
+    if not limiter.try_hit(name, ip, limit, window):
+        retry = limiter.retry_after(name, ip, window)
+        raise _auth_error(code, headers=[("Retry-After", str(retry))])
+
+
+def _public_user(user):
+    return {"id": user["id"], "name": user["name"], "phone": user["phone"], "email": user["email"]}
+
+
+def _login_key(login, identity, user):
+    """Ключ лимита входа. Для найденного покупателя — его id, чтобы почта и телефон считались вместе.
+    Для неизвестного логина — почта или телефон в нормальном виде. Хеш, чтобы логин не лежал в базе открыто."""
+    if user is not None:
+        subject = f"user:{user['id']}"
+    elif identity is not None:
+        subject = f"{identity[0]}:{identity[1]}"
+    else:
+        subject = "raw:" + login.strip().lower()
+    return hashlib.sha256(subject.encode("utf-8")).hexdigest()
+
+
+def _auth_me(handler, params, query):
+    token = auth.read_session_token(handler.headers.get("Cookie"))
+    user = None
+    if token is not None:
+        user = _run_auth(handler, store.user_for_session, auth.token_hash(token), store.utc_now())
+    return 200, {"ok": True, "user": user}
+
+
+def _auth_register(handler, params, query):
+    _hit_auth(handler, "register", "too_many_requests")
+    payload = _auth_json(handler)
+    data = _clean(store.clean_registration, payload)
+    password_hash = auth.hash_password(data.pop("password"))
+    token = auth.new_token()
+    user = _run_auth(handler, store.register_user, data, payload.get("captcha_ticket"),
+                     password_hash, auth.token_hash(token), store.utc_now())
+    cookie = auth.session_cookie(token, handler.server.cookie_secure)
+    return 201, {"ok": True, "user": _public_user(user)}, [("Set-Cookie", cookie)]
+
+
+def _auth_login(handler, params, query):
+    payload = _auth_json(handler)
+    login, password = _clean(store.clean_login, payload)
+    identity = store.login_identity(login)
+    user = _run_auth(handler, store.find_user_for_login, identity) if identity else None
+    key = _login_key(login, identity, user)
+    ip = _client_ip(handler)
+    limiter = handler.server.limiter
+    limits = handler.server.auth_limits
+
+    waits = []
+    for bucket, subject in (("login_key", key), ("login_ip", ip)):
+        limit, window = limits[bucket]
+        if limiter.is_over(bucket, subject, limit, window):
+            waits.append(limiter.retry_after(bucket, subject, window))
+    if waits:
+        raise _auth_error("too_many_attempts", headers=[("Retry-After", str(max(waits)))])
+
+    # Для неизвестного логина тоже считаем хеш: время ответа не должно выдавать, есть ли аккаунт.
+    checked = auth.verify_password(password, user["password_hash"] if user else auth.dummy_hash())
+    if user is None or not checked:
+        limiter.record("login_key", key, limits["login_key"][1])
+        limiter.record("login_ip", ip, limits["login_ip"][1])
+        raise _auth_error("invalid_credentials")
+
+    token = auth.new_token()
+    _run_auth(handler, store.create_session, user["id"], auth.token_hash(token), store.utc_now())
+    cookie = auth.session_cookie(token, handler.server.cookie_secure)
+    return 200, {"ok": True, "user": _public_user(user)}, [("Set-Cookie", cookie)]
+
+
+def _auth_logout(handler, params, query):
+    _require_json(handler)
+    token = auth.read_session_token(handler.headers.get("Cookie"))
+    if token is not None:
+        _run_auth(handler, store.delete_session, auth.token_hash(token))
+    return 200, {"ok": True}, [("Set-Cookie", auth.expired_session_cookie(handler.server.cookie_secure))]
+
+
+def _captcha_new(handler, params, query):
+    _hit_auth(handler, "captcha_new", "too_many_requests")
+    images = handler.server.captcha_images
+    if not captcha.is_available(images):
+        raise _auth_error("captcha_unavailable")
+    challenge = captcha.new_challenge(images)
+    _run_auth(handler, store.captcha_create, challenge["challenge_id"], challenge["expected"], store.utc_now())
+    return 200, {
+        "ok": True,
+        "challenge_id": challenge["challenge_id"],
+        "expires_in": captcha.CHALLENGE_TTL,
+        "grid": captcha.GRID,
+        "image": challenge["image"],
+        "tiles": challenge["tiles"],
+    }
+
+
+def _captcha_verify(handler, params, query):
+    _hit_auth(handler, "captcha_verify", "too_many_attempts")
+    payload = _auth_json(handler)
+    challenge_id, placements = _clean(store.clean_captcha_verify, payload)
+    ticket = auth.new_token()
+    outcome = _run_auth(handler, store.captcha_verify, challenge_id, placements,
+                        auth.token_hash(ticket), store.utc_now())
+    if outcome == "incomplete":
+        raise _auth_error("captcha_incomplete")
+    if outcome == "wrong":
+        raise _auth_error("captcha_wrong")
+    return 200, {"ok": True, "ticket": ticket, "expires_in": captcha.TICKET_TTL}
+
+
 ROUTES = [
+    ("GET", re.compile(r"^/api/auth/me$"), _auth_me),
+    ("POST", re.compile(r"^/api/auth/register$"), _auth_register),
+    ("POST", re.compile(r"^/api/auth/login$"), _auth_login),
+    ("POST", re.compile(r"^/api/auth/logout$"), _auth_logout),
+    ("GET", re.compile(r"^/api/captcha/new$"), _captcha_new),
+    ("POST", re.compile(r"^/api/captcha/verify$"), _captcha_verify),
     ("GET", re.compile(r"^/api/products$"), _products_list),
     ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)$"), _product_get),
     ("POST", re.compile(r"^/api/orders$"), _order_create),
@@ -378,17 +606,18 @@ class Handler(BaseHTTPRequestHandler):
             # Тело читаем сразу, даже если маршрут откажет (например 503): иначе сокет закроется с непрочитанными данными.
             self._prefetch_body()
             if path == "/api" or path.startswith("/api/"):
-                status, body = self._route_api(method, path, query)
-                self._send_json(status, body)
+                status, body, *extra = self._route_api(method, path, query)
+                self._send_json(status, body, extra[0] if extra else ())
             elif method == "GET":
                 self._send_static(path)
             else:
                 raise ApiError(405, {"error": "method not allowed"})
         except ApiError as exc:
             body = exc.body
-            if exc.status == 400 and isinstance(body, dict):
+            # У старых ответов об ошибке всегда есть поле fields; ответы контракта (с ok) не трогаем.
+            if exc.status == 400 and isinstance(body, dict) and "ok" not in body:
                 body = {**body, "fields": body.get("fields", {})}
-            self._send_json(exc.status, body)
+            self._send_json(exc.status, body, exc.headers)
         except (TimeoutError, ConnectionError):
             # Клиент молчит или оборвал соединение: отвечать некому, просто закрываем.
             self.close_connection = True
@@ -406,6 +635,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.server.limiter.is_over("admin", ip, ADMIN_FAIL_LIMIT, ADMIN_FAIL_WINDOW):
                 raise ApiError(429, {"error": "too many requests"})
             if not self._is_admin():
+                # Токен бота — не попытка взлома: отказываем 403 и не считаем в лимит.
+                if self._is_bot():
+                    raise ApiError(403, {"error": "forbidden"})
                 self.server.limiter.record("admin", ip, ADMIN_FAIL_WINDOW)
                 raise ApiError(401, {"error": "unauthorized"})
         path_matched = False
@@ -426,12 +658,22 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.limiter.try_hit(bucket, _client_ip(self), limit, window):
             raise ApiError(429, {"error": "too many requests"})
 
-    def _is_admin(self):
+    def _bearer(self):
+        """Значение Bearer-токена из заголовка Authorization в виде байтов или None."""
         scheme, _, token = self.headers.get("Authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
+            return None
+        return token.strip().encode("utf-8")
+
+    def _is_admin(self):
+        token = self._bearer()
+        return token is not None and hmac.compare_digest(token, self.server.admin_token.encode("utf-8"))
+
+    def _is_bot(self):
+        token = self._bearer()
+        if token is None or not self.server.bot_token:
             return False
-        expected = self.server.admin_token.encode("utf-8")
-        return hmac.compare_digest(token.strip().encode("utf-8"), expected)
+        return hmac.compare_digest(token, self.server.bot_token.encode("utf-8"))
 
     def _prefetch_body(self):
         """Читает тело запроса один раз. Слишком большое тело не сохраняем."""
@@ -480,10 +722,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
 
-    def _send_json(self, status, body):
+    def _send_json(self, status, body, headers=()):
         self.send_response(status)
         self._security_headers()
         self.send_header("Cache-Control", "no-store")
+        for name, value in headers:
+            self.send_header(name, value)
         if status == 204 or body is None:
             self.end_headers()
             return
@@ -527,25 +771,38 @@ class AppServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, address, *, db_path, admin_token, static_root=ROOT, quiet=False,
-                 order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT):
+                 order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT,
+                 bot_token=None, cookie_secure=True, auth_limits=None, captcha_dir=None):
         self.db_path = Path(db_path)
         self.admin_token = admin_token or None
+        self.bot_token = bot_token or None
         self.static_root = Path(static_root).resolve()
         self.quiet = quiet
         self.order_limit = order_limit
         self.event_limit = event_limit
+        self.cookie_secure = bool(cookie_secure)
+        self.auth_limits = {**DEFAULT_AUTH_LIMITS, **(auth_limits or {})}
+        # Картинки капчи читаются один раз при запуске. Если их мало, сервер всё равно работает.
+        if captcha_dir is None:
+            captcha_dir = self.static_root / "assets" / "captcha"
+        self.captcha_images = captcha.load_images(captcha_dir)
         self.limiter = RateLimiter(clock=time.time, db_path=self.db_path)
         super().__init__(address, Handler)
 
 
 def create_server(host, port, *, db_path=DEFAULT_DB, products_path=DEFAULT_PRODUCTS,
                   admin_token=None, static_root=ROOT, quiet=False,
-                  order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT) -> AppServer:
-    """Готовит базу (создаёт, заполняет, отменяет просроченные заказы) и возвращает сервер, который ещё не запущен."""
+                  order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT,
+                  bot_token=None, cookie_secure=None, auth_limits=None, captcha_dir=None) -> AppServer:
+    """Готовит базу (создаёт, заполняет, отменяет просроченные заказы) и возвращает сервер, который ещё не запущен.
+
+    cookie_secure=None — взять из COOKIE_SECURE: флаг Secure выключен только при COOKIE_SECURE=0."""
     if admin_token and len(admin_token) < MIN_ADMIN_TOKEN_LENGTH:
         raise ValueError(
             f"ADMIN_TOKEN слишком короткий: нужно не меньше {MIN_ADMIN_TOKEN_LENGTH} символов"
         )
+    if cookie_secure is None:
+        cookie_secure = os.environ.get("COOKIE_SECURE", "1").strip() != "0"
     store.init_db(db_path, products_path)
     return AppServer(
         (host, port),
@@ -555,6 +812,10 @@ def create_server(host, port, *, db_path=DEFAULT_DB, products_path=DEFAULT_PRODU
         quiet=quiet,
         order_limit=order_limit,
         event_limit=event_limit,
+        bot_token=bot_token,
+        cookie_secure=cookie_secure,
+        auth_limits=auth_limits,
+        captcha_dir=captcha_dir,
     )
 
 
@@ -569,16 +830,21 @@ def main(argv=None) -> int:
     admin_token = os.environ.get("ADMIN_TOKEN", "").strip() or None
     if admin_token is None:
         print("ADMIN_TOKEN не задан: админка отключена (ответ 503).", file=sys.stderr)
+    bot_token = os.environ.get("SHOP_BOT_TOKEN", "").strip() or None
 
     try:
         server = create_server(
             args.host, args.port,
             db_path=args.db, products_path=args.products, admin_token=admin_token,
+            bot_token=bot_token,
         )
     except ValueError as exc:
         print(f"Сервер не запущен: {exc}", file=sys.stderr)
         return 1
 
+    if not captcha.is_available(server.captcha_images):
+        print(f"Капча недоступна: нужно не меньше {captcha.MIN_IMAGES} картинок в assets/captcha "
+              f"(найдено {len(server.captcha_images)}).", file=sys.stderr)
     print(f"ZENTO запущен: http://{args.host}:{server.server_port}", flush=True)
     try:
         server.serve_forever()

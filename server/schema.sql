@@ -61,3 +61,40 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_created ON events (created_at);
+
+-- Покупатели. Почта хранится в нижнем регистре; пароль — только в виде scrypt-хеша.
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL,
+    phone         TEXT NOT NULL UNIQUE,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+-- Сессии: в базе только SHA-256 от токена из cookie.
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at);
+
+-- Задания капчи. expected — JSON {"<токен кусочка>": номер части 0..3}.
+CREATE TABLE IF NOT EXISTS captcha_challenges (
+    id         TEXT PRIMARY KEY,
+    expected   TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at    TEXT
+);
+
+-- Билеты после правильной капчи: только хеш, одноразовые.
+CREATE TABLE IF NOT EXISTS captcha_tickets (
+    token_hash TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at    TEXT
+);
