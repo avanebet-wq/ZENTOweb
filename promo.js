@@ -16,13 +16,11 @@
   var track = document.getElementById('promo-track');
   var viewport = document.getElementById('promo-viewport');
   var dotsBox = document.getElementById('promo-dots');
-  var pauseBtn = document.getElementById('promo-pause');
-  if (!section || !track || !viewport || !dotsBox || !pauseBtn) return;
+  if (!section || !track || !viewport || !dotsBox) return;
 
   var slides = [];
   var dots = [];
   var index = 0;
-  var userPaused = false;   // нажата кнопка «Пауза»
   var hovering = false;     // мышь над полосой
   var focused = false;      // фокус внутри полосы
   var touching = false;     // палец на полосе
@@ -35,7 +33,7 @@
   function now() { return Date.now(); }
   function autoOK() { return !reduceMotion.matches; }
   function running() {
-    return autoOK() && !userPaused && !hovering && !focused && !touching && !hiddenNow &&
+    return autoOK() && !hovering && !focused && !touching && !hiddenNow &&
       slides.length > 1 && now() >= holdUntil;
   }
 
@@ -107,12 +105,6 @@
     acc = 0;
   }
 
-  function renderPause() {
-    pauseBtn.hidden = !autoOK();
-    pauseBtn.textContent = userPaused ? 'Продолжить' : 'Пауза';
-    pauseBtn.setAttribute('aria-label', userPaused ? 'Продолжить смену карточек' : 'Остановить смену карточек');
-  }
-
   /* ---------- Один таймер ---------- */
   function tick() {
     var t = now();
@@ -126,11 +118,6 @@
   }
 
   /* ---------- Пауза и ручное управление ---------- */
-  pauseBtn.addEventListener('click', function () {
-    userPaused = !userPaused;
-    renderPause();
-  });
-
   viewport.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') hovering = true; });
   viewport.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') hovering = false; });
 
@@ -177,8 +164,6 @@
     acc = 0;
   });
 
-  if (reduceMotion.addEventListener) reduceMotion.addEventListener('change', renderPause);
-
   /* ---------- Запуск ---------- */
   fetch('assets/promo.json', { headers: { Accept: 'application/json' } }).then(function (res) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -187,7 +172,6 @@
     build(data);
     if (!slides.length) return;
     show(0);
-    renderPause();
     timer = setInterval(tick, TICK_MS);
   }).catch(function () {
     section.hidden = true;
