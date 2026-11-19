@@ -168,7 +168,7 @@
     user = u && typeof u === 'object' ? u : null;
     if (user) {
       var name = String(user.name || '');
-      els.guest.hidden = true;
+      els.guest.toggleAttribute('hidden', true);
       els.initials.hidden = false;
       els.initials.textContent = initialsOf(name);
       els.btn.classList.add('is-user');
@@ -178,7 +178,7 @@
       els.accName.textContent = name;
       els.accMail.textContent = String(user.email || '');
     } else {
-      els.guest.hidden = false;
+      els.guest.toggleAttribute('hidden', false);
       els.initials.hidden = true;
       els.initials.textContent = '';
       els.btn.classList.remove('is-user');
