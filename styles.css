@@ -1,16 +1,21 @@
+/* ===== Токены: цвета и стекло ===== */
 :root {
-  --color-primary: #2563EB;
+  --color-primary: #1E40AF;
   --color-on-primary: #FFFFFF;
-  --color-accent: #EC4899;
-  --color-background: #EEF2FF;
+  --color-link: #1E40AF;
+  --color-accent: #831843;
+  --color-background: #E9EEFB;
   --color-foreground: #0F172A;
-  --color-muted-foreground: #475569;
-  --glass-bg: rgba(255, 255, 255, 0.28);
-  --glass-border: rgba(255, 255, 255, 0.55);
-  --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  --glass-blur: blur(24px) saturate(180%);
-  --ring: #2563EB;
+  --color-muted-foreground: #334155;
+  --ring: #1E40AF;
+
+  --glass-bg: rgba(255, 255, 255, 0.16);
+  --glass-bg-strong: rgba(255, 255, 255, 0.40);
+  --glass-rim: rgba(255, 255, 255, 0.85);
+  --glass-rim-soft: rgba(255, 255, 255, 0.12);
+  --glass-shadow: 0 10px 40px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(255, 255, 255, 0.15);
+  --glass-blur: blur(28px) saturate(200%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -18,10 +23,15 @@
     --color-background: #0B1020;
     --color-foreground: #F8FAFC;
     --color-muted-foreground: #CBD5E1;
-    --glass-bg: rgba(30, 41, 59, 0.35);
-    --glass-border: rgba(255, 255, 255, 0.14);
-    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    --color-link: #93C5FD;
+    --color-accent: #F9A8D4;
+    --ring: #93C5FD;
+    --glass-bg: rgba(30, 41, 59, 0.38);
+    --glass-bg-strong: rgba(30, 41, 59, 0.55);
+    --glass-rim: rgba(255, 255, 255, 0.28);
+    --glass-rim-soft: rgba(255, 255, 255, 0.05);
+    --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+    --glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 }
 
@@ -29,10 +39,15 @@
   --color-background: #0B1020;
   --color-foreground: #F8FAFC;
   --color-muted-foreground: #CBD5E1;
-  --glass-bg: rgba(30, 41, 59, 0.35);
-  --glass-border: rgba(255, 255, 255, 0.14);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --color-link: #93C5FD;
+  --color-accent: #F9A8D4;
+  --ring: #93C5FD;
+  --glass-bg: rgba(30, 41, 59, 0.38);
+  --glass-bg-strong: rgba(30, 41, 59, 0.55);
+  --glass-rim: rgba(255, 255, 255, 0.28);
+  --glass-rim-soft: rgba(255, 255, 255, 0.05);
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  --glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 * { box-sizing: border-box; }
@@ -59,16 +74,16 @@ body {
 .bg-blobs span {
   position: absolute;
   border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.8;
+  filter: blur(60px) saturate(140%);
+  opacity: 0.95;
 }
-.bg-blobs span:nth-child(1) { width: 380px; height: 380px; background: #60A5FA; top: -80px; left: -80px; }
-.bg-blobs span:nth-child(2) { width: 320px; height: 320px; background: #F472B6; top: 30%; right: -100px; }
-.bg-blobs span:nth-child(3) { width: 360px; height: 360px; background: #A78BFA; bottom: -80px; left: 20%; }
+.bg-blobs span:nth-child(1) { width: 420px; height: 420px; background: #60A5FA; top: -120px; left: -100px; }
+.bg-blobs span:nth-child(2) { width: 360px; height: 360px; background: #F472B6; top: 35%; right: -120px; }
+.bg-blobs span:nth-child(3) { width: 400px; height: 400px; background: #A78BFA; bottom: -120px; left: 15%; }
 :root[data-theme="dark"] .bg-blobs span,
-:root:not([data-theme="light"]) .bg-blobs span { opacity: 0.35; }
+:root:not([data-theme="light"]) .bg-blobs span { opacity: 0.3; }
 
-a { color: var(--color-primary); }
+a { color: var(--color-link); }
 
 a:focus-visible,
 button:focus-visible {
@@ -83,27 +98,59 @@ button:focus-visible {
   padding: 0 16px;
 }
 
-/* Общий стеклянный стиль */
+/* Отступ 16px от краёв экрана на телефоне: стеклянные блоки не касаются края */
+.container.glass {
+  width: min(1100px, calc(100% - 32px));
+}
+
+/* ===== Стекло: основной материал ===== */
 .glass {
+  position: relative;
   background: var(--glass-bg);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  border: 1px solid var(--glass-rim-soft);
+  box-shadow: var(--glass-shadow), var(--glass-inner);
+  transition: transform 300ms ease, box-shadow 300ms ease;
+}
+/* Световая кромка: ярче сверху слева, тусклее снизу справа */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(135deg, var(--glass-rim) 0%, var(--glass-rim-soft) 45%, var(--glass-rim) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+/* Блик: мягкое пятно света в верхнем левом углу */
+.glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(120% 60% at 0% 0%, rgba(255, 255, 255, 0.22), transparent 55%);
+  pointer-events: none;
+}
+.glass:hover {
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.18), var(--glass-inner);
 }
 
-/* Шапка */
+/* ===== Шапка-капсула ===== */
 .site-header {
   position: sticky;
   top: 12px;
   z-index: 10;
   margin: 12px 16px 0;
   border-radius: 999px;
-  background: var(--glass-bg);
+  background: var(--glass-bg-strong);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  border: 1px solid var(--glass-rim-soft);
+  box-shadow: var(--glass-shadow), var(--glass-inner);
 }
 .header-inner {
   display: flex;
@@ -130,22 +177,17 @@ nav a {
   text-decoration: none;
   padding: 4px 0;
 }
-nav a:hover { color: var(--color-primary); }
+nav a:hover { color: var(--color-link); }
 
-/* Главный экран */
-.hero {
-  padding: 72px 0 56px;
-}
-.hero .container > * {
-  position: relative;
-}
+/* ===== Главный экран ===== */
+.hero { padding: 72px 0 56px; }
 .hero-card {
   border-radius: 32px;
   padding: 48px 32px;
 }
 .eyebrow {
   color: var(--color-accent);
-  font-weight: 600;
+  font-weight: 700;
   margin: 0 0 8px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -168,36 +210,38 @@ h1 {
   margin-top: 24px;
 }
 
-/* Кнопки */
+/* ===== Кнопки ===== */
 .btn {
+  position: relative;
   display: inline-block;
   padding: 12px 22px;
   border-radius: 999px;
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease;
+  transition: background-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
 }
+.btn:active { transform: scale(0.97); }
 .btn-primary {
-  background: rgba(37, 99, 235, 0.85);
+  background: rgba(30, 64, 175, 0.9);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   color: var(--color-on-primary);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: var(--glass-shadow), var(--glass-inner);
 }
-.btn-primary:hover { transform: translateY(-1px); background: rgba(37, 99, 235, 0.95); }
+.btn-primary:hover { background: rgba(30, 64, 175, 1); transform: translateY(-1px); }
 .btn-ghost {
-  background: var(--glass-bg);
+  background: var(--glass-bg-strong);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   color: var(--color-foreground);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight);
+  border: 1px solid var(--glass-rim-soft);
+  box-shadow: var(--glass-inner);
 }
 .btn-ghost:hover { transform: translateY(-1px); }
 
-/* Секции */
+/* ===== Секции и карточки ===== */
 .section { padding: 24px 0; }
 .section-glass {
   border-radius: 32px;
@@ -208,8 +252,6 @@ h2 {
   font-size: clamp(1.6rem, 4vw, 2.2rem);
   margin: 0 0 16px;
 }
-
-/* Карточки */
 .cards {
   list-style: none;
   padding: 0;
@@ -225,10 +267,11 @@ h2 {
   border-radius: 24px;
   padding: 22px;
 }
+.card:hover { transform: translateY(-3px); }
 .card h3 { margin: 0 0 8px; }
 .card p { margin: 0; color: var(--color-muted-foreground); }
 
-/* Подвал */
+/* ===== Подвал ===== */
 .site-footer {
   margin: 24px 16px 16px;
   border-radius: 24px;
@@ -237,7 +280,7 @@ h2 {
   font-size: 0.95rem;
 }
 
-/* Если браузер не поддерживает размытие или пользователь просит меньше прозрачности */
+/* ===== Запасные варианты ===== */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass, .site-header, .btn-primary, .btn-ghost {
     background: rgba(255, 255, 255, 0.92);
@@ -246,7 +289,7 @@ h2 {
   :root[data-theme="dark"] .site-header { background: rgba(15, 23, 42, 0.95); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .glass, .site-header, .btn-primary, .btn-ghost, .section-glass, .card, .site-footer {
+  .glass, .site-header, .btn-primary, .btn-ghost {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--color-background);
@@ -254,7 +297,7 @@ h2 {
   .bg-blobs { display: none; }
 }
 
-/* Движение */
+/* ===== Движение ===== */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;
