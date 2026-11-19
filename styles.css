@@ -757,6 +757,66 @@ td .muted { font-size: 0.88rem; }
 .check input { flex: 0 0 22px; width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--color-primary); cursor: pointer; }
 .check [aria-invalid="true"] { outline: 2px solid var(--color-danger); outline-offset: 3px; }
 
+/* ===== Ссылки и окно «Забыли пароль?» ===== */
+.forgot-row { margin: -4px 0 12px; text-align: right; }
+.forgot-row .link-btn { padding: 0 4px; }
+.link-btn:disabled { color: var(--color-muted-foreground); cursor: default; }
+.check a { color: var(--color-link); font-weight: 700; }
+
+.reset-dialog {
+  width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px);
+  padding: 0; border: 0; background: transparent; color: var(--color-foreground);
+}
+.reset-dialog::backdrop { background: var(--backdrop); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.reset-dialog[open] .reset-card { animation: gate-in 460ms var(--ease-out) both; }
+.reset-card {
+  max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain;
+  padding: 22px 20px 20px; border-radius: 32px;
+  background: var(--surface);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-inner), 0 0 0 1px var(--highlight), 0 0 28px var(--edge-glow);
+}
+@media (max-width: 719px) {
+  .reset-card { background: var(--surface-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+.reset-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.reset-title { margin: 0; font-size: 1.3rem; line-height: 1.25; }
+.reset-title:focus { outline: none; }
+.reset-note {
+  margin: 0 0 14px; padding: 12px 14px; border-radius: 16px;
+  background: var(--glass-bg-strong); border: 1px solid var(--glass-rim-soft);
+  font-weight: 600;
+}
+.reset-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin-top: 6px; }
+.reset-timer { font-size: 0.95rem; color: var(--color-muted-foreground); font-variant-numeric: tabular-nums; }
+#rc-code { letter-spacing: 0.35em; text-align: center; font-size: 20px; font-weight: 700; }
+
+/* ===== Страница правил (/rules.html) ===== */
+.rules-wrap {
+  max-width: 720px; margin: 0 auto; display: grid; gap: 18px;
+  padding: calc(16px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
+}
+.rules-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rules-logo { display: block; width: min(200px, 56vw); height: auto; filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.28)); }
+.rules-card {
+  padding: 22px 20px 24px; border-radius: 32px;
+  background: var(--surface);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-inner), 0 0 0 1px var(--highlight), 0 0 28px var(--edge-glow);
+}
+@media (max-width: 719px) {
+  .rules-card { background: var(--surface-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+.rules-card h1 { font-size: clamp(1.6rem, 6vw, 2.1rem); margin: 4px 0 16px; }
+.rules-card h2 { font-size: 1.1rem; margin: 22px 0 8px; }
+.rules-card p { line-height: 1.6; }
+.rules-draft {
+  margin: 0 0 18px; padding: 12px 14px; border-radius: 16px;
+  background: var(--surface-solid); border: 1px solid var(--color-warning);
+  color: var(--color-foreground); font-weight: 600;
+}
+.rules-end { margin: 24px 0 0; }
+
 /* ===== Запасные варианты ===== */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .site-header, .surface { background: var(--surface-solid); }
