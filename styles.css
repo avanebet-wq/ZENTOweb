@@ -439,6 +439,8 @@ a.js-nav { display: inline-flex; align-items: center; min-height: 44px; }
   transition-delay: var(--d, 0ms);
 }
 .reveal.is-visible { opacity: 1; transform: none; }
+/* Карточки внутри горизонтальных рядов видны сразу: они появляются при листании вбок */
+.js .hscroll .reveal:not(.is-visible) { opacity: 1; transform: none; }
 
 /* ===== Диалоги: лист товара и выдвижная корзина ===== */
 dialog.sheet, dialog.drawer {

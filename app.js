@@ -670,7 +670,7 @@
   var TOKEN_KEY = 'zento-admin-token';
   var STATUSES = [
     ['new', 'Новый'],
-    ['processing', 'В работе'],
+    ['paid', 'Оплачен'],
     ['shipped', 'Отправлен'],
     ['done', 'Выполнен'],
     ['cancelled', 'Отменён']
@@ -871,7 +871,7 @@
       return api('/api/admin/orders').then(function (list) {
         list = Array.isArray(list) ? list : [];
         el('orders-body').innerHTML = list.length ? list.map(function (o) {
-          var c = o.customer || {};
+          var c = o.customer || { name: o.customer_name, phone: o.customer_phone };
           var items = Array.isArray(o.items)
             ? o.items.map(function (i) { return esc(i.name || ('№ ' + i.product_id)) + ' × ' + count(i.qty); }).join('<br>')
             : '';
