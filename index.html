@@ -6,9 +6,15 @@
   <title>ZENTO — Магазин</title>
   <meta name="description" content="ZENTO — интернет-магазин: выбирайте товары, добавляйте их в корзину и оформляйте заказ.">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="capsule.css">
+  <link rel="stylesheet" href="profile.css">
   <link rel="stylesheet" href="captcha.css">
+  <link rel="stylesheet" href="roulette.css">
+  <link rel="stylesheet" href="promo.css">
   <script src="boot.js"></script>
   <script src="app.js" defer></script>
+  <script src="roulette.js" defer></script>
+  <script src="promo.js" defer></script>
 </head>
 <body data-page="shop">
   <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -30,7 +36,7 @@
       </div>
 
       <div class="gate-card glass" id="gate-card" hidden>
-        <h1 class="gate-title">Войдите, чтобы смотреть товары</h1>
+        <h2 class="gate-title">Войдите, чтобы смотреть товары</h2>
 
         <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="Вход или регистрация">
           <button class="auth-tab press" type="button" role="tab" id="tab-login" aria-selected="true" aria-controls="panel-login">Вход</button>
@@ -60,7 +66,7 @@
             <div class="field">
               <label for="r-nick">Ник</label>
               <input id="r-nick" name="nick" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" aria-describedby="rn-hint re-nick">
-              <p class="field-hint" id="rn-hint">От 3 до 20 символов: буквы, цифры и знак _</p>
+              <p class="field-hint" id="rn-hint">От 3 до 20 символов: буквы, цифры и знак подчёркивания</p>
               <p class="field-error" id="re-nick" aria-live="polite" hidden></p>
             </div>
             <div class="field">
@@ -161,6 +167,7 @@
           <div class="acc-menu" id="acc-menu" hidden>
             <p class="acc-name" id="acc-name"></p>
             <p class="acc-mail muted" id="acc-mail"></p>
+            <button class="btn btn-ghost btn-small press" type="button" id="profile-open">Мой профиль</button>
             <button class="btn btn-ghost btn-small press" type="button" id="logout-btn">Выйти</button>
           </div>
         </div>
@@ -172,63 +179,55 @@
       </div>
     </header>
 
+    <!-- Капелька входа: не внутри шапки (там свой блюр), а под ней. Показывает capsule.js после входа -->
+    <div class="capsule" id="capsule" aria-hidden="true">
+      <div class="capsule-card">
+        <span class="capsule-avatar" id="capsule-initials"></span>
+        <span class="capsule-text">
+          <span class="capsule-title">Успешный вход</span>
+          <span class="capsule-nick" id="capsule-nick"></span>
+        </span>
+        <svg class="capsule-check" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </div>
+    </div>
+
     <main id="top">
-      <section id="today" class="hero" aria-label="Выбор ZENTO" hidden>
+      <!-- Испытай удачу: колесо призов. Результат считает сервер (POST /api/roulette/spin) -->
+      <section class="section luck" id="luck" aria-labelledby="luck-title">
         <div class="container">
-          <div class="hero-card glass reveal" id="hero">
-            <div class="hero-text">
-              <p class="eyebrow">Выбор ZENTO</p>
-              <h1 id="hero-name"></h1>
-              <p class="lead" id="hero-desc"></p>
-              <p class="hero-price" id="hero-price"></p>
-              <p class="stock" id="hero-stock"></p>
-              <div class="hero-actions">
-                <button class="btn btn-primary press" type="button" id="hero-add">В корзину</button>
-                <button class="btn btn-ghost press" type="button" id="hero-open">Подробнее</button>
-              </div>
+          <div class="luck-card glass">
+            <div class="luck-stage">
+              <img class="luck-bg" src="assets/roulette/jackpot-preview-720.webp" srcset="assets/roulette/jackpot-preview-720.webp 720w, assets/roulette/jackpot-preview-1448.webp 1448w" sizes="(min-width: 720px) 640px, 100vw" width="1448" height="1086" alt="" decoding="async">
+              <h1 class="luck-title" id="luck-title">Испытай удачу!</h1>
             </div>
-            <div class="hero-visual"><span class="art art-xl" id="hero-art" aria-hidden="true"></span></div>
+            <div class="luck-body">
+              <div class="wheel-area">
+                <span class="wheel-pointer" aria-hidden="true"></span>
+                <svg class="wheel" id="wheel" viewBox="0 0 200 200" role="img" aria-label="Колесо призов">
+                  <g class="wheel-rotor" id="wheel-rotor"></g>
+                  <circle class="wheel-hub" cx="100" cy="100" r="13"></circle>
+                </svg>
+              </div>
+              <button class="btn btn-primary btn-spin press" type="button" id="spin-btn" disabled>Крутить</button>
+              <p class="luck-status" id="spin-status" role="status"></p>
+              <p class="luck-rules">Розыгрыш без покупки и ставок. Призы не имеют денежной стоимости. <a href="/rules.html">Правила</a></p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="categories" class="section" aria-labelledby="cats-title" hidden>
+      <!-- Полоса карточек: акции, новости, новинки. Данные: assets/promo.json; смена каждые 5 с (promo.js) -->
+      <section class="section promo" id="promo" role="region" aria-roledescription="carousel" aria-labelledby="promo-title">
         <div class="container">
-          <h2 id="cats-title">Категории</h2>
-        </div>
-        <div class="container">
-          <div class="chips hscroll" id="chips" role="group" tabindex="0" aria-label="Категории, листайте вправо"></div>
-        </div>
-      </section>
-
-      <section id="top-sales" class="section" aria-labelledby="h-top" hidden>
-        <div class="container">
-          <h2 id="h-top">Топ продаж</h2>
-          <ul class="rail hscroll" id="row-top" tabindex="0" aria-label="Топ продаж, листайте вправо"></ul>
-        </div>
-      </section>
-
-      <section id="new-items" class="section" aria-labelledby="h-new" hidden>
-        <div class="container">
-          <h2 id="h-new">Новинки</h2>
-          <ul class="rail hscroll" id="row-new" tabindex="0" aria-label="Новинки, листайте вправо"></ul>
-        </div>
-      </section>
-
-      <section id="sale-items" class="section" aria-labelledby="h-sale" hidden>
-        <div class="container">
-          <h2 id="h-sale">Скидки</h2>
-          <ul class="rail hscroll" id="row-sale" tabindex="0" aria-label="Скидки, листайте вправо"></ul>
-        </div>
-      </section>
-
-      <section id="catalog" class="section" aria-labelledby="catalog-title">
-        <div class="container">
-          <div class="catalog-head">
-            <h2 id="catalog-title">Все товары</h2>
-            <p class="muted" id="catalog-status" aria-live="polite"></p>
+          <div class="promo-head">
+            <h2 class="promo-heading" id="promo-title">Акции, новости и новинки</h2>
+            <button class="btn btn-ghost btn-small press promo-pause" type="button" id="promo-pause">Пауза</button>
           </div>
-          <ul class="grid" id="grid" aria-busy="true"></ul>
+          <div class="promo-viewport" id="promo-viewport" role="group" tabindex="0" aria-live="off" aria-label="Карточки: листайте стрелками или свайпом">
+            <div class="promo-track" id="promo-track"></div>
+          </div>
+          <div class="promo-dots" id="promo-dots"></div>
+          <p class="promo-more"><a class="btn btn-ghost btn-small press js-nav" href="catalog.html">Смотреть товары</a></p>
         </div>
       </section>
     </main>
@@ -239,29 +238,6 @@
       </footer>
     </div>
   </div>
-
-  <!-- Лист товара: снизу на телефоне, окно по центру на компьютере -->
-  <dialog class="sheet" id="product-dialog" aria-labelledby="p-title">
-    <div class="sheet-body glass surface">
-      <span class="sheet-handle" aria-hidden="true"></span>
-      <div class="sheet-scroll">
-        <div class="sheet-top">
-          <p class="eyebrow" id="p-cat"></p>
-          <button class="icon-btn press" type="button" data-close aria-label="Закрыть">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
-          </button>
-        </div>
-        <div class="sheet-visual"><span class="art art-xl" id="p-art" aria-hidden="true"></span></div>
-        <h2 id="p-title"></h2>
-        <p class="stock" id="p-stock"></p>
-        <p class="p-desc" id="p-desc"></p>
-        <div class="buy-row">
-          <p class="price-lg" id="p-price"></p>
-          <button class="btn btn-primary btn-block press" type="button" id="p-add">В корзину</button>
-        </div>
-      </div>
-    </div>
-  </dialog>
 
   <!-- Корзина: выдвигается справа; внутри три экрана: корзина, оформление, спасибо -->
   <dialog class="drawer" id="cart-dialog" aria-labelledby="cart-title">
@@ -328,8 +304,109 @@
     </div>
   </dialog>
 
+  <!-- Мой профиль: снизу на телефоне, окно по центру на компьютере. Данные с сервера выводим через textContent -->
+  <dialog class="sheet profile-dialog" id="profile-dialog" aria-labelledby="profile-title">
+    <div class="sheet-body glass surface profile-body">
+      <span class="sheet-handle" aria-hidden="true"></span>
+      <div class="profile-head">
+        <h2 id="profile-title" tabindex="-1">Мой профиль</h2>
+        <button class="icon-btn press" type="button" id="profile-close" aria-label="Закрыть профиль">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="profile-scroll" id="profile-scroll">
+        <div class="pf-loading" id="pf-loading" hidden>
+          <p class="muted" id="pf-loading-text" role="status">Загружаю профиль…</p>
+          <button class="btn btn-ghost btn-small press" type="button" id="pf-retry" hidden>Повторить</button>
+        </div>
+
+        <div id="pf-editor" hidden>
+          <div class="pf-cover">
+            <button class="pf-banner press" type="button" id="pf-banner" aria-label="Сменить баннер">
+              <span class="pf-view" id="pf-banner-view" aria-hidden="true"></span>
+              <span class="pf-pill" aria-hidden="true">Изменить</span>
+            </button>
+            <button class="pf-avatar press" type="button" id="pf-avatar" aria-label="Сменить фото профиля">
+              <span class="pf-view" id="pf-avatar-view" aria-hidden="true"></span>
+              <span class="pf-badge" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+              </span>
+            </button>
+          </div>
+
+          <div class="pf-photo-actions">
+            <button class="link-btn press" type="button" id="pf-avatar-del">Удалить фото</button>
+            <button class="link-btn press" type="button" id="pf-banner-del">Удалить баннер</button>
+          </div>
+          <p class="field-error" id="pf-photo-err" aria-live="polite" hidden></p>
+
+          <form id="pf-form" novalidate>
+            <div class="field">
+              <label for="pf-nick">Ник</label>
+              <input id="pf-nick" name="nick" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" aria-describedby="pf-nick-hint pf-nick-err">
+              <p class="field-hint" id="pf-nick-hint">От 3 до 20 символов: буквы, цифры и знак _. Ник можно менять раз в 30 дней.</p>
+              <p class="field-error" id="pf-nick-err" aria-live="polite" hidden></p>
+            </div>
+            <div class="field">
+              <label for="pf-bio">Описание</label>
+              <textarea id="pf-bio" name="bio" rows="4" aria-describedby="pf-bio-count pf-bio-err"></textarea>
+              <p class="pf-count" id="pf-bio-count">0 / 300</p>
+              <p class="field-error" id="pf-bio-err" aria-live="polite" hidden></p>
+            </div>
+          </form>
+        </div>
+
+        <div id="pf-crop" hidden>
+          <h3 id="pf-crop-title" tabindex="-1">Кадрирование</h3>
+          <p class="field-hint">Перетащите фото пальцем или мышкой. Ползунок меняет масштаб, стрелки двигают кадр.</p>
+          <canvas class="pf-canvas" id="pf-canvas" tabindex="0" aria-label="Кадр. Перетаскивайте фото или двигайте стрелками"></canvas>
+          <div class="field pf-zoom">
+            <label for="pf-zoom">Масштаб</label>
+            <input id="pf-zoom" type="range" min="1" max="4" step="0.01" value="1">
+          </div>
+          <p class="field-error" id="pf-crop-err" aria-live="polite" hidden></p>
+          <div class="pf-crop-actions">
+            <button class="btn btn-ghost press" type="button" id="pf-crop-back">Назад</button>
+            <button class="btn btn-primary press" type="button" id="pf-crop-done">Готово</button>
+          </div>
+        </div>
+
+        <div class="done" id="pf-done" hidden>
+          <div class="done-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+          </div>
+          <h3 id="pf-done-title" tabindex="-1">Профиль сохранён</h3>
+        </div>
+      </div>
+
+      <div class="pf-confirm" id="pf-confirm" hidden>
+        <h3 id="pf-confirm-title" tabindex="-1">Отменить изменения?</h3>
+        <p class="muted">Новый текст и фото не сохранятся.</p>
+        <div class="pf-confirm-actions">
+          <button class="btn btn-primary press" type="button" id="pf-stay">Остаться</button>
+          <button class="btn btn-ghost press" type="button" id="pf-leave">Выйти без сохранения</button>
+        </div>
+      </div>
+
+      <div class="pf-foot" id="pf-foot" hidden>
+        <p class="pf-dirty" id="pf-dirty" hidden><span class="pf-dot" aria-hidden="true"></span>Есть несохранённые изменения</p>
+        <div class="pf-status" id="pf-status" aria-live="polite"></div>
+        <div class="pf-foot-actions">
+          <button class="btn btn-ghost press" type="button" id="pf-cancel">Отмена</button>
+          <button class="btn btn-primary press" type="button" id="pf-save" disabled>Сохранить</button>
+        </div>
+      </div>
+      <input type="file" id="pf-file" accept="image/*" hidden>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <!-- Одна живая область для капельки входа: всегда в DOM, пустая до входа -->
+  <p class="visually-hidden" id="capsule-live" role="status"></p>
   <script src="captcha.js" defer></script>
   <script src="auth.js" defer></script>
+  <script src="capsule.js" defer></script>
+  <script src="profile.js" defer></script>
 </body>
 </html>
