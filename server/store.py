@@ -1337,3 +1337,45 @@ def delete_image(conn, user_id, kind, now) -> dict:
     with transaction(conn):
         conn.execute("DELETE FROM user_images WHERE user_id = ? AND kind = ?", (user_id, kind))
     return own_profile(conn, user_id, now)
+
+# ---------------------------------------------------------------- колесо фортуны (SQL)
+
+def roulette_day(moment: datetime) -> str:
+    """Календарный день по Киеву, например 2026-11-19. Одна прокрутка на пользователя на такой день."""
+    return moment.astimezone(KYIV_TZ).date().isoformat()
+
+
+def roulette_next_at(moment: datetime) -> str:
+    """Начало следующих суток по Киеву в формате to_iso (UTC)."""
+    local = moment.astimezone(KYIV_TZ)
+    start = datetime.combine(local.date() + timedelta(days=1), time.min, tzinfo=KYIV_TZ)
+    return to_iso(start)
+
+
+def roulette_status(conn, user_id, now) -> dict:
+    """Можно ли крутить сегодня. next_at — когда станет можно (None, если уже можно)."""
+    spun = conn.execute(
+        "SELECT 1 FROM roulette_spins WHERE user_id = ? AND day = ?",
+        (user_id, roulette_day(now)),
+    ).fetchone()
+    if spun is None:
+        return {"can_spin": True, "next_at": None}
+    return {"can_spin": False, "next_at": roulette_next_at(now)}
+
+
+def roulette_spin(conn, user_id, prize_id, now) -> dict:
+    """Записывает прокрутку на сегодня. Проверка и запись — в одной транзакции BEGIN IMMEDIATE,
+    поэтому два запроса подряд (двойной клик) не могут записать две прокрутки.
+    Возвращает {"spun": True/False, "next_at": ...}. spun=False — сегодня уже крутил."""
+    day = roulette_day(now)
+    with transaction(conn):
+        spun = conn.execute(
+            "SELECT 1 FROM roulette_spins WHERE user_id = ? AND day = ?", (user_id, day)
+        ).fetchone()
+        if spun is not None:
+            return {"spun": False, "next_at": roulette_next_at(now)}
+        conn.execute(
+            "INSERT INTO roulette_spins (user_id, day, prize_id, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, day, prize_id, to_iso(now)),
+        )
+    return {"spun": True, "next_at": roulette_next_at(now)}
