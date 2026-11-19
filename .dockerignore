@@ -1,0 +1,8 @@
+.git
+.github
+.claude
+data/*.db
+data/store.db
+tests
+**/__pycache__
+**/*.pyc
