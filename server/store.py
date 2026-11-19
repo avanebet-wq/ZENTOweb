@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 SERVER_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = SERVER_DIR / "schema.sql"
 
-MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+KYIV_TZ = ZoneInfo("Europe/Kyiv")
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 ORDER_STATUSES = ("new", "paid", "shipped", "done", "cancelled")
@@ -265,17 +265,19 @@ def _color(value):
 
 
 def normalize_phone(value) -> str:
-    """Возвращает телефон в виде +79991234567. 8 в начале заменяем на +7."""
+    """Возвращает украинский телефон в виде +380991234567.
+
+    Принимает +380..., 380... и 0XX... (например 067 111 22 33)."""
     if not isinstance(value, str):
         raise ValueError("укажите телефон")
     text = value.strip()
     if not text or len(text) > 30 or not PHONE_CHARS_RE.match(text):
         raise ValueError("допустимы цифры, пробелы, + и скобки")
     digits = re.sub(r"\D", "", text)
-    if len(digits) == 11 and digits[0] == "8":
-        digits = "7" + digits[1:]
-    if not 10 <= len(digits) <= 15:
-        raise ValueError("нужно от 10 до 15 цифр")
+    if len(digits) == 10 and digits[0] == "0":
+        digits = "38" + digits
+    if len(digits) != 12 or not digits.startswith("380"):
+        raise ValueError("укажите украинский номер, например +380 67 123 45 67")
     return "+" + digits
 
 
@@ -637,11 +639,11 @@ def record_event(conn, payload) -> None:
 
 
 def get_stats(conn, now=None) -> dict:
-    """Статистика. Дни считаются по Москве. Отменённые заказы в выручку и в количество не входят.
+    """Статистика. Дни считаются по Киеву. Отменённые заказы в выручку и в количество не входят.
     Просмотры — только события с type = 'view'."""
-    local_now = (now or utc_now()).astimezone(MOSCOW_TZ)
+    local_now = (now or utc_now()).astimezone(KYIV_TZ)
     first_day = local_now.date() - timedelta(days=STATS_DAYS - 1)
-    since = to_iso(datetime.combine(first_day, time.min, tzinfo=MOSCOW_TZ))
+    since = to_iso(datetime.combine(first_day, time.min, tzinfo=KYIV_TZ))
 
     totals = conn.execute(
         "SELECT COUNT(*) AS orders_count, COALESCE(SUM(total), 0) AS revenue"
@@ -668,7 +670,7 @@ def get_stats(conn, now=None) -> dict:
         "SELECT created_at, total FROM orders WHERE status <> 'cancelled' AND created_at >= ?",
         (since,),
     ):
-        day = parse_iso(row["created_at"]).astimezone(MOSCOW_TZ).date().isoformat()
+        day = parse_iso(row["created_at"]).astimezone(KYIV_TZ).date().isoformat()
         count, revenue = by_day.get(day, (0, 0))
         by_day[day] = (count + 1, revenue + row["total"])
     orders_by_day = []

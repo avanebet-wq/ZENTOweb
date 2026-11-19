@@ -34,7 +34,7 @@ sys.path.insert(0, str(REPO / "server"))
 import app  # noqa: E402
 import store  # noqa: E402
 
-MOSCOW = ZoneInfo("Europe/Moscow")
+KYIV = ZoneInfo("Europe/Kyiv")
 TOKEN = "test-admin-token-0123456789abcdefghij"   # 40 символов, не короче 32
 BIG_LIMIT = 1000  # в обычных тестах лимиты не мешают; сами лимиты проверяем отдельно
 
@@ -51,9 +51,9 @@ Resp = namedtuple("Resp", "status body headers raw")
 
 CUSTOMER = {
     "name": "Анна Петрова",
-    "phone": "+7 (999) 111-22-33",
+    "phone": "+380 (99) 111-22-33",
     "email": "anna@example.com",
-    "address": "Москва, ул. Тестовая, 1",
+    "address": "Киев, ул. Тестовая, 1",
 }
 
 
@@ -263,7 +263,7 @@ class OrdersTest(ServerTestCase):
 
     def test_customer_is_found_by_normalized_phone(self):
         self.create_order([{"product_id": "p1", "qty": 1}])
-        other_format = dict(CUSTOMER, phone="8 999 111 22 33")
+        other_format = dict(CUSTOMER, phone="099 111 22 33")
         self.create_order([{"product_id": "p1", "qty": 1}], customer=other_format)
         self.assertEqual(self.db_count("customers"), 1)
         resp = self.admin("GET", "/api/admin/customers")
@@ -272,18 +272,18 @@ class OrdersTest(ServerTestCase):
     def test_repeat_order_updates_customer_but_keeps_order_address(self):
         first = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
         new_data = dict(CUSTOMER, name="Анна Смирнова", email="new@example.com",
-                        address="Санкт-Петербург, ул. Новая, 2")
+                        address="Киев, ул. Новая, 2")
         second = self.create_order([{"product_id": "p1", "qty": 1}], customer=new_data).body["order_id"]
 
         orders = {o["id"]: o for o in self.admin("GET", "/api/admin/orders").body}
         self.assertEqual(orders[first]["address"], CUSTOMER["address"])
-        self.assertEqual(orders[second]["address"], "Санкт-Петербург, ул. Новая, 2")
+        self.assertEqual(orders[second]["address"], "Киев, ул. Новая, 2")
 
         customers = self.admin("GET", "/api/admin/customers").body
         self.assertEqual(len(customers), 1)
         self.assertEqual(customers[0]["name"], "Анна Смирнова")
         self.assertEqual(customers[0]["email"], "new@example.com")
-        self.assertEqual(customers[0]["address"], "Санкт-Петербург, ул. Новая, 2")
+        self.assertEqual(customers[0]["address"], "Киев, ул. Новая, 2")
 
     def test_validation_errors_list_every_bad_field(self):
         payload = {
@@ -511,14 +511,14 @@ class CustomersStatsTest(ServerTestCase):
         customers = self.admin("GET", "/api/admin/customers").body
         self.assertEqual(customers[0]["orders_count"], 1)
 
-    def test_stats_fixed_moscow_days(self):
-        # Фиксированное «сейчас»: 11 ноября 2026, 10:00 по Москве.
-        now = datetime(2026, 11, 11, 10, 0, tzinfo=MOSCOW)
+    def test_stats_fixed_kyiv_days(self):
+        # Фиксированное «сейчас»: 11 ноября 2026, 10:00 по Киеву.
+        now = datetime(2026, 11, 11, 10, 0, tzinfo=KYIV)
         ids = [self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"] for _ in range(4)]
-        self.set_order_time(ids[0], "2026-11-10T20:30:00.000000Z")   # 10 ноября 23:30 МСК
-        self.set_order_time(ids[1], "2026-11-10T21:30:00.000000Z")   # 11 ноября 00:30 МСК
-        self.set_order_time(ids[2], "2026-10-28T20:59:59.000000Z")   # 28 октября 23:59 МСК, вне окна
-        self.set_order_time(ids[3], "2026-10-28T21:00:00.000000Z")   # 29 октября 00:00 МСК, первый день окна
+        self.set_order_time(ids[0], "2026-11-10T21:30:00.000000Z")   # 10 ноября 23:30 по Киеву
+        self.set_order_time(ids[1], "2026-11-10T22:30:00.000000Z")   # 11 ноября 00:30 по Киеву
+        self.set_order_time(ids[2], "2026-10-28T21:59:59.000000Z")   # 28 октября 23:59 по Киеву, вне окна
+        self.set_order_time(ids[3], "2026-10-28T22:00:00.000000Z")   # 29 октября 00:00 по Киеву, первый день окна
 
         conn = store.connect(self.db_path)
         try:
