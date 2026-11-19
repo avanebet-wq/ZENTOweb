@@ -17,8 +17,6 @@
 .zc-dialog[open] { animation: zc-dialog-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .zc-dialog::backdrop {
   background: var(--backdrop, rgba(7, 10, 25, 0.42));
-  -webkit-backdrop-filter: blur(8px) saturate(120%);
-  backdrop-filter: blur(8px) saturate(120%);
   animation: zc-fade 240ms ease-out both;
 }
 .zc-dialog [hidden] { display: none !important; }
@@ -47,12 +45,12 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: radial-gradient(120% 60% at 0% 0%, rgba(255, 255, 255, 0.22), transparent 55%);
+  background: none;
 }
 .zc-card > * { position: relative; z-index: 1; }
 
 .zc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.zc-title { margin: 0; font-size: 1.2rem; font-weight: 800; line-height: 1.25; letter-spacing: -0.01em; }
+.zc-title { margin: 0; font-size: 1.2rem; font-weight: 600; line-height: 1.25; letter-spacing: 0; }
 .zc-icon-btn {
   flex: 0 0 auto;
   width: 44px; height: 44px; padding: 0;
@@ -107,7 +105,7 @@
 }
 /* Кусочек над правильным местом: мягкое свечение */
 .zc-cell.is-near {
-  box-shadow: inset 0 0 0 3px var(--color-accent, #1E40AF), 0 0 22px rgba(96, 165, 250, 0.45);
+  box-shadow: inset 0 0 0 3px var(--color-accent, #6E8BFF);
 }
 /* Выбор с клавиатуры: подсветка места */
 .zc-cell.is-target {
@@ -138,10 +136,10 @@
   aspect-ratio: 1;
   box-sizing: border-box;
   border-radius: 16px;
-  background-color: #FFFFFF;
+  background-color: #E9ECF2;
   background-repeat: no-repeat;
   background-size: 200% 200%;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.18), inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -159,7 +157,7 @@
   cursor: grabbing;
   z-index: 5;
   transition: none;
-  box-shadow: 0 24px 40px rgba(15, 23, 42, 0.30), 0 8px 14px rgba(15, 23, 42, 0.16), inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 .zc-piece.is-shake { animation: zc-shake 380ms ease-in-out; }
 /* Кусочек на доске заполняет ячейку */
@@ -170,13 +168,13 @@
   height: 100%;
   aspect-ratio: auto;
   cursor: default;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.14), inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 /* ----- Успех ----- */
 .zc-board.is-success {
   animation: zc-glow 700ms ease-out both;
-  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.08), inset 0 0 0 2px rgba(22, 101, 52, 0.55), 0 0 36px rgba(22, 163, 74, 0.35);
+  box-shadow: inset 0 0 0 2px rgba(76, 195, 138, 0.6);
 }
 .zc-board.is-success .zc-cell { opacity: 0.6; }
 .zc-check {
@@ -222,11 +220,11 @@
 .zc-btn-primary {
   background: var(--color-primary, #1E40AF);
   color: var(--color-on-primary, #FFFFFF);
-  box-shadow: 0 6px 16px rgba(30, 64, 175, 0.25);
+  box-shadow: none;
 }
 .zc-btn:disabled {
-  background: var(--disabled-bg, #E2E8F0);
-  color: var(--disabled-fg, #475569);
+  background: var(--disabled-bg, #23272E);
+  color: var(--disabled-fg, #8A93A2);
   border-color: transparent;
   box-shadow: none;
   cursor: not-allowed;

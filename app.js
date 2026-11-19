@@ -20,7 +20,6 @@
   var intFmt = new Intl.NumberFormat('uk-UA');
   function money(v) { return uah.format(num(v)); }
   function count(v) { return intFmt.format(num(v)); }
-  function safeColor(c) { return /^#[0-9a-f]{3,8}$/i.test(String(c || '')) ? c : '#1E40AF'; }
   function attrSel(name, val) { return '[' + name + '="' + String(val).replace(/["\\]/g, '\\$&') + '"]'; }
   function hasTag(tag) { return function (p) { return Array.isArray(p.tags) && p.tags.indexOf(tag) !== -1; }; }
   function isOnSale(p) { return hasTag('sale')(p) || num(p.old_price) > num(p.price); }
@@ -35,30 +34,24 @@
     try { var s = window[kind]; if (!s) return; if (val) s.setItem(key, val); else s.removeItem(key); } catch (e) { /* не запоминаем */ }
   }
 
-  /* ---------- Иллюстрации товаров (SVG в стиле ZENTO, без фото) ---------- */
-  var ART = {
-    'Аудио': '<path d="M14 40v-6a18 18 0 0 1 36 0v6"/><rect x="10" y="38" width="9" height="15" rx="4"/><rect x="45" y="38" width="9" height="15" rx="4"/>',
-    'Гаджеты': '<rect x="21" y="8" width="22" height="48" rx="5"/><path d="M26 15h12M29 49h6"/>',
-    'Умный дом': '<path d="M24 35a8 8 0 1 1 16 0c0 3.5-2.5 5.5-3.5 9h-9c-1-3.5-3.5-5.5-3.5-9z"/><path d="M27 51h10M29 56h6M32 8v4"/>',
-    'Фитнес': '<path d="M9 25v14M15 20v24M49 20v24M55 25v14M15 32h34"/>',
-    'Офис': '<rect x="7" y="18" width="50" height="28" rx="5"/><path d="M15 27h3M22 27h3M29 27h3M36 27h3M43 27h3M15 36h22M43 36h6"/>',
-    'Путешествия': '<rect x="18" y="14" width="28" height="40" rx="10"/><path d="M26 14v-4h12v4M24 30h16M18 24h-4M46 24h4"/>'
-  };
-  var ART_DEFAULT = '<rect x="14" y="14" width="36" height="36" rx="9"/>';
-  function artSvg(p) {
-    var key = String(p.category || '');
-    var body = Object.prototype.hasOwnProperty.call(ART, key) ? ART[key] : ART_DEFAULT;
-    return '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
+  /* ---------- Фото товара: пока одно фото на все товары (данные API не меняем) ---------- */
+  var PRODUCT_PHOTO = 'assets/products/pinecones.jpg';
+  var PRODUCT_PHOTO_W = 493;
+  var PRODUCT_PHOTO_H = 403;
+  // Путь к картинке для любого товара; когда появятся свои фото, сюда добавится выбор по p.id
+  function productPhotoSrc() { return PRODUCT_PHOTO; }
+  // eager — для картинки первого экрана, остальные грузятся по мере прокрутки
+  function productImgHTML(p, eager) {
+    return '<img src="' + productPhotoSrc() + '" alt="' + esc(p && p.name) + '" width="' + PRODUCT_PHOTO_W + '" height="' + PRODUCT_PHOTO_H + '"' +
+      (eager ? ' fetchpriority="high"' : ' loading="lazy"') + ' decoding="async">';
   }
   function artHTML(p, cls) {
-    return '<span class="art ' + cls + '" style="--tile:' + safeColor(p.color) + '" aria-hidden="true">' + artSvg(p) + '</span>';
+    return '<span class="art ' + cls + '">' + productImgHTML(p) + '</span>';
   }
   function setArt(node, p) {
-    node.style.setProperty('--tile', safeColor(p.color));
-    node.innerHTML = artSvg(p);
+    node.innerHTML = productImgHTML(p, true);
   }
 
-  // На iPhone :active срабатывает только если у документа есть touch-обработчик
   document.addEventListener('touchstart', function () {}, { passive: true });
 
   /* ---------- Появление блоков при прокрутке (один раз) ---------- */
