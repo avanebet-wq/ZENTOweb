@@ -13,12 +13,12 @@ from datetime import datetime, timezone
 
 # Сегменты колеса. weight — относительный вес (сумма не обязана быть 100).
 PRIZES = [
-    {"id": "again", "label": "Попробуйте завтра", "weight": 40},
-    {"id": "sticker", "label": "Стикер ZENTO", "weight": 15},
-    {"id": "badge", "label": "Значок «Удачливый»", "weight": 14},
-    {"id": "postcard", "label": "Открытка ZENTO", "weight": 12},
-    {"id": "tea", "label": "Бонус: чашка чая от ZENTO (при встрече)", "weight": 10},
-    {"id": "tip", "label": "Совет дня от ZENTO", "weight": 9},
+    {"id": "again", "label": "Завтра!", "weight": 40},
+    {"id": "sticker", "label": "Стикер", "weight": 15},
+    {"id": "badge", "label": "Значок", "weight": 14},
+    {"id": "postcard", "label": "Открытка", "weight": 12},
+    {"id": "tea", "label": "Чай", "weight": 10},
+    {"id": "tip", "label": "Совет", "weight": 9},
 ]
 
 # Случайность для розыгрыша: системный генератор ОС, не random.random().

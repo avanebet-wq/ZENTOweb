@@ -800,7 +800,7 @@
     els.logout.addEventListener('click', logout);
 
     // «Мой профиль» в меню: закрываем меню и открываем окно (его ведёт profile.js)
-    els.profileOpen.addEventListener('click', function () {
+    if (els.profileOpen) els.profileOpen.addEventListener('click', function () {
       closeMenu();
       try {
         document.dispatchEvent(new CustomEvent('zento:profile-open', { detail: { opener: els.btn } }));
