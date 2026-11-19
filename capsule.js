@@ -78,7 +78,31 @@
     var nick = user && typeof user.nick === 'string' ? user.nick.trim() : '';
     if (initialsEl) initialsEl.textContent = initialsOf(nick);
     if (nickEl) nickEl.textContent = nick ? '«' + nick + '»' : '';
+    paintPhoto(nick);
     return nick;
+  }
+
+  // Фото из профиля вместо инициалов. Нет фото или не загрузилось — остаются инициалы.
+  var photo = null;
+  function paintPhoto(nick) {
+    if (!initialsEl || !nick) return;
+    if (!photo) {
+      photo = document.createElement('img');
+      photo.className = 'capsule-photo';
+      photo.alt = '';
+      photo.decoding = 'async';
+      photo.hidden = true;
+      photo.addEventListener('error', function () { photo.hidden = true; });
+      initialsEl.appendChild(photo);
+    }
+    photo.hidden = true;
+    fetch('/api/profile/me', { headers: { Accept: 'application/json' } }).then(function (res) {
+      return res.ok ? res.json() : null;
+    }).then(function (d) {
+      if (!d || d.ok !== true || !d.user || !d.user.has_avatar) return;
+      photo.src = '/api/users/' + encodeURIComponent(nick) + '/avatar?v=' + encodeURIComponent(d.user.avatar_v || 0);
+      photo.hidden = false;
+    }).catch(function () { /* без фото остаются инициалы */ });
   }
 
   function hide() {
@@ -91,7 +115,9 @@
   }
 
   // Показываем заново: если капелька уже видна, таймеры перезапускаются, копии не появляются
+  var shownOnce = false;
   function show(user) {
+    shownOnce = true;
     clearTimers();
     var nick = fill(user);
     placeCapsule();
@@ -124,10 +150,14 @@
     playSound();
   });
 
-  document.addEventListener('zento:session', function (e) {
-    var state = e && e.detail ? e.detail.state : '';
-    if (state === 'out') hide();
-  });
+  // Перезагрузка страницы с активным входом: капелька без звука (браузер звук без нажатия всё равно не даст)
+  function onSession(detail) {
+    var state = detail ? detail.state : '';
+    if (state === 'out') { shownOnce = false; hide(); return; }
+    if (state === 'in' && detail.user && !shownOnce) show(detail.user);
+  }
+  document.addEventListener('zento:session', function (e) { onSession(e && e.detail ? e.detail : null); });
+  if (window.zentoSession) onSession(window.zentoSession);
 
   window.addEventListener('resize', function () {
     if (el.classList.contains('is-on')) placeCapsule();
