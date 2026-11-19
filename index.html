@@ -9,11 +9,9 @@
   <link rel="stylesheet" href="capsule.css">
   <link rel="stylesheet" href="profile.css">
   <link rel="stylesheet" href="captcha.css">
-  <link rel="stylesheet" href="roulette.css">
   <link rel="stylesheet" href="promo.css">
   <script src="boot.js"></script>
   <script src="app.js" defer></script>
-  <script src="roulette.js" defer></script>
   <script src="promo.js" defer></script>
 </head>
 <body data-page="shop">
@@ -192,29 +190,6 @@
     </div>
 
     <main id="top">
-      <!-- Испытай удачу: колесо призов. Результат считает сервер (POST /api/roulette/spin) -->
-      <section class="section luck" id="luck" aria-labelledby="luck-title">
-        <div class="container">
-          <div class="luck-card glass">
-            <div class="luck-stage">
-              <img class="luck-bg" src="assets/roulette/jackpot-preview-720.webp" srcset="assets/roulette/jackpot-preview-720.webp 720w, assets/roulette/jackpot-preview-1448.webp 1448w" sizes="(min-width: 720px) 640px, 100vw" width="1448" height="1086" alt="" decoding="async">
-              <h1 class="luck-title" id="luck-title">Испытай удачу!</h1>
-            </div>
-            <div class="luck-body">
-              <div class="wheel-area">
-                <span class="wheel-pointer" aria-hidden="true"></span>
-                <svg class="wheel" id="wheel" viewBox="0 0 200 200" role="img" aria-label="Колесо призов">
-                  <g class="wheel-rotor" id="wheel-rotor"></g>
-                  <circle class="wheel-hub" cx="100" cy="100" r="13"></circle>
-                </svg>
-              </div>
-              <button class="btn btn-primary btn-spin press" type="button" id="spin-btn" disabled>Крутить</button>
-              <p class="luck-status" id="spin-status" role="status"></p>
-              <p class="luck-rules">Розыгрыш без покупки и ставок. Призы не имеют денежной стоимости. <a href="/rules.html">Правила</a></p>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <!-- Полоса карточек: акции, новости, новинки. Данные: assets/promo.json; смена каждые 5 с (promo.js) -->
       <section class="section promo" id="promo" role="region" aria-roledescription="carousel" aria-labelledby="promo-title">
