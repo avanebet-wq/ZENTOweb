@@ -3,60 +3,86 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ZENTO</title>
-  <meta name="description" content="ZENTO — сайт-визитка. Текст будет заменён.">
+  <title>ZENTO — Приложения</title>
+  <meta name="description" content="ZENTO — подборка приложений на каждый день. Текст-заглушка, будет заменён.">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+
   <header class="site-header">
     <div class="container header-inner">
       <a class="logo" href="#top" aria-label="ZENTO, на главную">ZENTO</a>
       <nav aria-label="Основная навигация">
-        <a href="#about">О нас</a>
-        <a href="#services">Услуги</a>
+        <a href="#today">Сегодня</a>
+        <a href="#top-free">Топ</a>
+        <a href="#new">Новое</a>
         <a href="#contact">Контакты</a>
       </nav>
+      <a class="btn btn-ghost btn-small" href="#contact">Войти</a>
     </div>
   </header>
 
   <main id="top">
-    <section class="hero">
+    <section id="today" class="hero">
       <div class="container glass hero-card">
-        <p class="eyebrow">Добро пожаловать</p>
-        <h1>ZENTO</h1>
-        <p class="lead">Короткое описание того, что вы делаете и чем полезны людям. Текст-заглушка, замените на свой.</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="#contact">Связаться</a>
-          <a class="btn btn-ghost" href="#services">Подробнее</a>
+        <p class="eyebrow">Сегодня</p>
+        <h1>Приложения на каждый день</h1>
+        <p class="lead">Короткое описание подборки. Текст-заглушка, замените на свой.</p>
+        <div class="feature glass">
+          <span class="app-icon app-icon-lg" aria-hidden="true">Z</span>
+          <div>
+            <p class="feature-title">Главное приложение недели</p>
+            <p class="feature-sub">Название и описание будут здесь</p>
+          </div>
+          <a class="btn btn-primary btn-small" href="#contact">Получить</a>
         </div>
+      </div>
+    </section>
+
+    <section id="categories" class="section">
+      <div class="container">
+        <h2>Категории</h2>
+        <div class="chips glass-scroll" role="list" tabindex="0" aria-label="Категории, листайте вправо">
+          <a class="chip glass" role="listitem" href="#categories">Развлечения</a>
+          <a class="chip glass" role="listitem" href="#categories">Образование</a>
+          <a class="chip glass" role="listitem" href="#categories">Здоровье</a>
+          <a class="chip glass" role="listitem" href="#categories">Утилиты</a>
+          <a class="chip glass" role="listitem" href="#categories">Музыка</a>
+          <a class="chip glass" role="listitem" href="#categories">Бизнес</a>
+          <a class="chip glass" role="listitem" href="#categories">Спорт</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="top-free" class="section">
+      <div class="container glass section-glass">
+        <h2>Топ бесплатных</h2>
+        <ol class="rail glass-scroll" tabindex="0" aria-label="Топ бесплатных, листайте вправо">
+          <li class="app glass"><span class="rank">1</span><span class="app-icon" aria-hidden="true">A</span><div><p class="app-name">Приложение 1</p><p class="app-sub">Краткое описание</p></div><a class="btn btn-primary btn-small" href="#contact">Получить</a></li>
+          <li class="app glass"><span class="rank">2</span><span class="app-icon" aria-hidden="true">B</span><div><p class="app-name">Приложение 2</p><p class="app-sub">Краткое описание</p></div><a class="btn btn-primary btn-small" href="#contact">Получить</a></li>
+          <li class="app glass"><span class="rank">3</span><span class="app-icon" aria-hidden="true">C</span><div><p class="app-name">Приложение 3</p><p class="app-sub">Краткое описание</p></div><a class="btn btn-primary btn-small" href="#contact">Получить</a></li>
+          <li class="app glass"><span class="rank">4</span><span class="app-icon" aria-hidden="true">D</span><div><p class="app-name">Приложение 4</p><p class="app-sub">Краткое описание</p></div><a class="btn btn-primary btn-small" href="#contact">Получить</a></li>
+          <li class="app glass"><span class="rank">5</span><span class="app-icon" aria-hidden="true">E</span><div><p class="app-name">Приложение 5</p><p class="app-sub">Краткое описание</p></div><a class="btn btn-primary btn-small" href="#contact">Получить</a></li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="new" class="section">
+      <div class="container glass section-glass">
+        <h2>Новое</h2>
+        <ul class="grid">
+          <li class="card glass"><span class="app-icon" aria-hidden="true">F</span><h3>Новинка 1</h3><p>Краткое описание новинки.</p></li>
+          <li class="card glass"><span class="app-icon" aria-hidden="true">G</span><h3>Новинка 2</h3><p>Краткое описание новинки.</p></li>
+          <li class="card glass"><span class="app-icon" aria-hidden="true">H</span><h3>Новинка 3</h3><p>Краткое описание новинки.</p></li>
+        </ul>
       </div>
     </section>
 
     <section id="about" class="section">
       <div class="container glass section-glass">
-        <h2>О нас</h2>
-        <p>Здесь будет рассказ о компании: чем занимаетесь, для кого и почему вам можно доверять.</p>
-      </div>
-    </section>
-
-    <section id="services" class="section">
-      <div class="container glass section-glass">
-        <h2>Услуги</h2>
-        <ul class="cards">
-          <li class="card glass">
-            <h3>Услуга 1</h3>
-            <p>Краткое описание первой услуги.</p>
-          </li>
-          <li class="card glass">
-            <h3>Услуга 2</h3>
-            <p>Краткое описание второй услуги.</p>
-          </li>
-          <li class="card glass">
-            <h3>Услуга 3</h3>
-            <p>Краткое описание третьей услуги.</p>
-          </li>
-        </ul>
+        <h2>О компании</h2>
+        <p>Здесь будет рассказ о компании: чем занимаетесь и почему вам можно доверять.</p>
       </div>
     </section>
 
