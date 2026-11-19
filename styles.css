@@ -877,3 +877,13 @@ td .muted { font-size: 13px; }
 
 /* «Удалить» в корзине — красная текстовая кнопка, как в iOS */
 .cart-row .link-btn { color: var(--red); }
+
+/* ===== Главный блок: заголовок и фото товара (восстановлено после слияния, в стиле стекла) ===== */
+.hero-grid { display: grid; gap: 24px; align-items: center; }
+.hero-text > * { max-width: 36rem; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.hero-media { margin: 0; padding: 6px; border-radius: 26px; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 18px 40px rgba(0, 0, 0, 0.35); }
+.hero-media img { display: block; width: 100%; height: auto; aspect-ratio: 493 / 403; object-fit: cover; border-radius: 20px; }
+@media (min-width: 720px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; }
+}
