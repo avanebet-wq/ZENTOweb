@@ -131,7 +131,14 @@ a:focus-visible, button:focus-visible, .glass-scroll:focus-visible {
   border: 1px solid var(--glass-rim-soft);
   box-shadow: var(--glass-shadow), var(--glass-inner);
 }
-.header-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; }
+.header-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px; padding: 10px 16px; }
+.header-inner .logo { order: 1; }
+.header-inner .btn-ghost { order: 2; }
+.header-inner nav { order: 3; width: 100%; justify-content: center; gap: 18px; font-size: 0.95rem; }
+@media (min-width: 720px) {
+  .header-inner nav { order: 2; width: auto; }
+  .header-inner .btn-ghost { order: 3; }
+}
 .logo { font-weight: 800; font-size: 1.2rem; color: var(--color-foreground); text-decoration: none; letter-spacing: 0.04em; }
 nav { display: flex; flex-wrap: wrap; gap: 16px; }
 nav a { color: var(--color-muted-foreground); text-decoration: none; padding: 4px 0; }
