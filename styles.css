@@ -321,7 +321,7 @@ p { margin: 0 0 0.6em; }
 /* Неактивная кнопка: плотная серая заливка, не полупрозрачная */
 .btn:disabled { background: var(--disabled-bg); color: var(--disabled-fg); border-color: transparent; box-shadow: none; cursor: not-allowed; }
 .link-btn {
-  min-height: 44px; padding: 0 8px; border: 0; background: none;
+  min-height: 44px; padding: 0 8px; border: 0; border-radius: 999px; background: none;
   color: var(--color-link); font: inherit; font-weight: 600;
   text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
 }
@@ -329,6 +329,12 @@ p { margin: 0 0 0.6em; }
   flex: 0 0 auto; width: 44px; height: 44px; display: inline-grid; place-items: center;
   border: 1px solid var(--control-border); border-radius: 50%;
   background: var(--control-bg); color: var(--color-foreground); cursor: pointer;
+}
+/* Скруглённые элементы: системная квадратная подсветка при касании выключена,
+   вместо неё — мягкая подложка по форме элемента (как у .btn) */
+.link-btn, .icon-btn, .auth-tab, .check { -webkit-tap-highlight-color: transparent; }
+.link-btn:active, .icon-btn:active, .auth-tab:not([aria-selected="true"]):active, .check:active {
+  background: var(--glass-bg-strong);
 }
 
 /* ===== Категории и ряды: горизонтальная прокрутка с прилипанием ===== */
@@ -721,6 +727,7 @@ td .muted { font-size: 0.88rem; }
 .auth-tab {
   min-height: 44px; padding: 8px 12px; border: 0; border-radius: 999px;
   background: transparent; color: var(--color-muted-foreground); font: inherit; font-weight: 700; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition: background-color 280ms var(--ease-out), color 280ms var(--ease-out), box-shadow 280ms var(--ease-out);
 }
 .auth-tab[aria-selected="true"] { background: var(--color-primary); color: var(--color-on-primary); box-shadow: 0 6px 16px rgba(30, 64, 175, 0.25); }
@@ -753,9 +760,16 @@ td .muted { font-size: 0.88rem; }
 
 /* Согласие на обработку данных: галочка с большой областью нажатия */
 .consent { display: grid; gap: 6px; margin-bottom: 14px; }
-.check { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; font-size: 0.95rem; font-weight: 500; cursor: pointer; }
+.check {
+  display: flex; align-items: flex-start; gap: 12px; min-height: 44px; font-size: 0.95rem; font-weight: 500; cursor: pointer;
+  /* Отступ внутри скруглённой подложки; минус-отступ снаружи, чтобы текст стоял на месте */
+  padding: 0 6px; margin: 0 -6px; border-radius: 14px;
+}
 .check input { flex: 0 0 22px; width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--color-primary); cursor: pointer; }
-.check [aria-invalid="true"] { outline: 2px solid var(--color-danger); outline-offset: 3px; }
+/* Ошибка: не квадратная рамка, а скруглённая красноватая подложка и красный текст.
+   Вспышка поля (is-flash) для галочки отключена: она давала квадратное свечение */
+.check:has([aria-invalid="true"]) { color: var(--color-danger); background: rgba(185, 28, 28, 0.08); }
+.check [aria-invalid="true"].is-flash { animation: none; }
 
 /* ===== Ссылки и окно «Забыли пароль?» ===== */
 .forgot-row { margin: -4px 0 12px; text-align: right; }
@@ -763,14 +777,19 @@ td .muted { font-size: 0.88rem; }
 .link-btn:disabled { color: var(--color-muted-foreground); cursor: default; }
 .check a { color: var(--color-link); font-weight: 700; }
 
+/* overflow: visible — у браузера по умолчанию auto, он обрезал свечение карточки квадратом */
 .reset-dialog {
   width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px); overflow: visible;
   padding: 0; border: 0; background: transparent; color: var(--color-foreground);
 }
 .reset-dialog::backdrop { background: var(--backdrop); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .reset-dialog[open] .reset-card { animation: gate-in 460ms var(--ease-out) both; }
+/* Карточка не прокручивается сама: блик и кромка стоят на месте.
+   Прокрутка — во внутреннем блоке шага (#reset-step1 / #reset-step2) */
 .reset-card {
-  max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column;
+  max-height: calc(100dvh - 32px);
   padding: 22px 20px 20px; border-radius: 32px;
   background: var(--surface);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
@@ -779,17 +798,33 @@ td .muted { font-size: 0.88rem; }
 @media (max-width: 719px) {
   .reset-card { background: var(--surface-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
-.reset-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.reset-title { margin: 0; font-size: 1.3rem; line-height: 1.25; }
+.reset-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+/* Пункт 3: без одинокого слова в конце строки */
+.reset-title { margin: 0; font-size: 1.3rem; line-height: 1.25; text-wrap: balance; }
+/* Прокручиваемый блок шага: на маленьком экране прокручивается только он.
+   Поля выше уходят вверх. Внизу маска-градиент: текст плавно тает, показывая, что есть ещё.
+   Маска закреплена к блоку, а не к тексту, поэтому не едет вместе с прокруткой.
+   Нижний отступ 24px попадает под маску: если прокрутки нет, маска ничего не трогает. */
+#reset-step1, #reset-step2 {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  /* Боковые поля дают место тени кнопок и обводке полей, чтобы они не обрезались квадратом */
+  margin: 0 -16px; padding: 8px 16px 24px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
 .reset-title:focus { outline: none; }
 .reset-note {
   margin: 0 0 14px; padding: 12px 14px; border-radius: 16px;
   background: var(--glass-bg-strong); border: 1px solid var(--glass-rim-soft);
   font-weight: 600;
 }
-.reset-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin-top: 6px; }
+/* Пункт 4: три действия одной колонкой по центру, ровно и без переносов на 320 px */
+.reset-actions { display: grid; justify-items: center; gap: 2px; margin-top: 8px; }
 .reset-timer { font-size: 0.95rem; color: var(--color-muted-foreground); font-variant-numeric: tabular-nums; }
-#rc-code { letter-spacing: 0.35em; text-align: center; font-size: 20px; font-weight: 700; }
+.reset-timer:empty { display: none; }
+/* Пункт 5: после последней цифры есть хвост letter-spacing (0.35em), он сдвигает код влево.
+   Такой же отступ слева (0.35em) компенсирует сдвиг. */
+#rc-code { letter-spacing: 0.35em; padding-left: calc(14px + 0.35em); text-align: center; font-size: 20px; font-weight: 700; }
 
 /* ===== Страница правил (/rules.html) ===== */
 .rules-wrap {
