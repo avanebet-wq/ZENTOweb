@@ -15,8 +15,6 @@
   <script src="promo.js" defer></script>
 </head>
 <body data-page="shop">
-  <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
-
   <!-- Экран входа: обязательный. Пока сайт не знает, что вы вошли, он на весь экран, а магазин скрыт -->
   <section class="gate" id="gate" aria-label="Вход в ZENTO">
     <div class="gate-inner">
@@ -186,6 +184,22 @@
 
     <main id="top">
 
+      <!-- Главный блок: заголовок и фото товара. Фото одно на все товары (app.js: productPhotoSrc) -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="container hero-grid">
+          <div class="hero-text">
+            <h1 id="hero-title">Аудио, гаджеты и вещи для дома, офиса и дороги</h1>
+            <p class="lead">Наушники, power bank, умный дом, фитнес и путешествия. Выбирайте товар, кладите его в корзину и оформляйте заказ.</p>
+            <div class="hero-actions">
+              <a class="btn btn-primary press js-nav" href="catalog.html">Смотреть товары</a>
+            </div>
+          </div>
+          <figure class="hero-media">
+            <img src="assets/products/pinecones.jpg" alt="Шишки разного размера на светлом фоне" width="493" height="403" fetchpriority="high">
+          </figure>
+        </div>
+      </section>
+
       <!-- Полоса карточек: акции, новости, новинки. Данные: assets/promo.json; смена каждые 5 с (promo.js) -->
       <section class="section promo" id="promo" role="region" aria-roledescription="carousel" aria-labelledby="promo-title">
         <div class="container">
@@ -196,13 +210,12 @@
             <div class="promo-track" id="promo-track"></div>
           </div>
           <div class="promo-dots" id="promo-dots"></div>
-          <p class="promo-more"><a class="btn btn-ghost btn-small press js-nav" href="catalog.html">Смотреть товары</a></p>
         </div>
       </section>
     </main>
 
     <div class="container">
-      <footer class="site-footer glass">
+      <footer class="site-footer">
         <p>© ZENTO. Все права защищены.</p>
       </footer>
     </div>

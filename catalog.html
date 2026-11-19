@@ -12,8 +12,6 @@
   <script src="app.js" defer></script>
 </head>
 <body data-page="shop">
-  <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
-
   <!-- Экран входа: обязательный. Пока сайт не знает, что вы вошли, он на весь экран, а магазин скрыт -->
   <section class="gate" id="gate" aria-label="Вход в ZENTO">
     <div class="gate-inner">
@@ -222,7 +220,7 @@
     </main>
 
     <div class="container">
-      <footer class="site-footer glass">
+      <footer class="site-footer">
         <p>© ZENTO. Все права защищены.</p>
       </footer>
     </div>
@@ -239,7 +237,7 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
           </button>
         </div>
-        <div class="sheet-visual"><span class="art art-xl" id="p-art" aria-hidden="true"></span></div>
+        <div class="sheet-visual"><span class="art art-xl" id="p-art"></span></div>
         <h2 id="p-title"></h2>
         <p class="stock" id="p-stock"></p>
         <p class="p-desc" id="p-desc"></p>

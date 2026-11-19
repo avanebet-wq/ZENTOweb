@@ -990,12 +990,13 @@
 
   el.avatar.addEventListener('click', function () { pickPhoto('avatar'); });
   el.banner.addEventListener('click', function () { pickPhoto('banner'); });
-  el.actPhoto.addEventListener('click', function () { pickPhoto('avatar'); });
-  el.actNick.addEventListener('click', openNick);
-  el.actSettings.addEventListener('click', openSettings);
-  el.achGrid.addEventListener('click', onMedalClick);
-  el.tipClose.addEventListener('click', function () { closeTip(true); });
-  el.file.addEventListener('change', function () {
+  // На странице каталога нет части разметки (кнопки-действия, достижения, файл): проверяем, что элемент есть
+  if (el.actPhoto) el.actPhoto.addEventListener('click', function () { pickPhoto('avatar'); });
+  if (el.actNick) el.actNick.addEventListener('click', openNick);
+  if (el.actSettings) el.actSettings.addEventListener('click', openSettings);
+  if (el.achGrid) el.achGrid.addEventListener('click', onMedalClick);
+  if (el.tipClose) el.tipClose.addEventListener('click', function () { closeTip(true); });
+  if (el.file) el.file.addEventListener('change', function () {
     var f = el.file.files && el.file.files[0];
     var kind = st.pick;
     st.pick = '';

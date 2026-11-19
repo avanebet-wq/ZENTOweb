@@ -56,7 +56,7 @@
     slide.setAttribute('aria-label', 'Слайд ' + (k + 1) + ' из ' + total + ': ' + data.title);
 
     var card = el('article', 'promo-card');
-    card.appendChild(el('p', 'promo-tag', 'Испытай удачу!'));
+    card.appendChild(el('p', 'promo-tag', 'Испытай удачу'));
     card.appendChild(el('h3', 'promo-card-title', data.title));
     var list = el('ul', 'promo-list');
     data.items.forEach(function (item) {
