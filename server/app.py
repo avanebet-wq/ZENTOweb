@@ -13,6 +13,7 @@ import hmac
 import json
 import os
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -65,15 +66,12 @@ CONTENT_SECURITY_POLICY = (
 )
 
 
-def pick_client_ip(forwarded_for, peer_ip, trust_proxy):
-    """IP клиента для лимитов. За прокси (TRUST_PROXY=1) берём последний адрес из
-    X-Forwarded-For: его добавил доверенный прокси, а не клиент. Иначе — адрес соединения."""
-    if not trust_proxy or not forwarded_for:
+def pick_client_ip(real_ip_header, peer_ip, trust_proxy):
+    """IP клиента для лимитов. За прокси Railway (TRUST_PROXY=1) берём X-Real-IP: его ставит
+    граничный прокси Railway и перезаписывает, клиент его подделать не может. Иначе — адрес соединения."""
+    if not trust_proxy or not real_ip_header:
         return peer_ip
-    parts = [part.strip() for part in forwarded_for.split(",") if part.strip()]
-    if not parts:
-        return peer_ip
-    candidate = parts[-1]
+    candidate = real_ip_header.strip()
     if re.fullmatch(r"[0-9a-fA-F:.]{2,45}", candidate):
         return candidate
     return peer_ip
@@ -83,7 +81,7 @@ TRUST_PROXY = os.environ.get("TRUST_PROXY", "").strip() == "1"
 
 
 def _client_ip(self):
-    return pick_client_ip(self.headers.get("X-Forwarded-For"), self.client_address[0], TRUST_PROXY)
+    return pick_client_ip(self.headers.get("X-Real-IP"), self.client_address[0], TRUST_PROXY)
 
 
 class ApiError(Exception):
@@ -98,13 +96,29 @@ class ApiError(Exception):
 # ---------------------------------------------------------------- лимиты
 
 class RateLimiter:
-    """Скользящее окно по ключу (обычно IP). Хранит только времена попаданий."""
+    """Скользящее окно по ключу (обычно IP).
 
-    def __init__(self, clock=time.monotonic):
+    Без db_path хранит попадания в памяти (для тестов). С db_path хранит их в базе SQLite:
+    счётчики не сбрасываются при перезапуске и одинаковы для всех запросов."""
+
+    def __init__(self, clock=time.monotonic, db_path=None):
         self._clock = clock
+        self._db_path = str(db_path) if db_path else None
         self._lock = threading.Lock()
         self._hits: dict[tuple[str, str], deque] = {}
+        if self._db_path:
+            conn = self._connect()
+            try:
+                conn.execute("CREATE TABLE IF NOT EXISTS rate_hits "
+                             "(bucket TEXT NOT NULL, key TEXT NOT NULL, ts REAL NOT NULL)")
+                conn.execute("CREATE INDEX IF NOT EXISTS rate_hits_idx ON rate_hits (bucket, key, ts)")
+            finally:
+                conn.close()
 
+    def _connect(self):
+        return sqlite3.connect(self._db_path, timeout=10, isolation_level=None)
+
+    # --- память
     def _window(self, bucket, key, window):
         """Возвращает очередь попаданий внутри окна и текущее время. Вызывать под блокировкой."""
         now = self._clock()
@@ -118,8 +132,7 @@ class RateLimiter:
             return deque(), now
         return hits, now
 
-    def try_hit(self, bucket, key, limit, window) -> bool:
-        """Записывает попадание, если лимит не исчерпан. False — лимит исчерпан, попадание не записано."""
+    def _mem_try_hit(self, bucket, key, limit, window):
         with self._lock:
             hits, now = self._window(bucket, key, window)
             if len(hits) >= limit:
@@ -128,16 +141,61 @@ class RateLimiter:
             self._hits[(bucket, key)] = hits
             return True
 
-    def is_over(self, bucket, key, limit, window) -> bool:
+    def _mem_is_over(self, bucket, key, limit, window):
         with self._lock:
             hits, _ = self._window(bucket, key, window)
             return len(hits) >= limit
 
-    def record(self, bucket, key, window) -> None:
+    def _mem_record(self, bucket, key, window):
         with self._lock:
             hits, now = self._window(bucket, key, window)
             hits.append(now)
             self._hits[(bucket, key)] = hits
+
+    # --- публичные методы
+    def try_hit(self, bucket, key, limit, window) -> bool:
+        """Записывает попадание, если лимит не исчерпан. False — лимит исчерпан, попадание не записано."""
+        if not self._db_path:
+            return self._mem_try_hit(bucket, key, limit, window)
+        now = self._clock()
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM rate_hits WHERE bucket = ? AND key = ? AND ts <= ?",
+                         (bucket, key, now - window))
+            count = conn.execute("SELECT COUNT(*) FROM rate_hits WHERE bucket = ? AND key = ?",
+                                 (bucket, key)).fetchone()[0]
+            allowed = count < limit
+            if allowed:
+                conn.execute("INSERT INTO rate_hits (bucket, key, ts) VALUES (?, ?, ?)", (bucket, key, now))
+            conn.execute("COMMIT")
+            return allowed
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def is_over(self, bucket, key, limit, window) -> bool:
+        if not self._db_path:
+            return self._mem_is_over(bucket, key, limit, window)
+        conn = self._connect()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM rate_hits WHERE bucket = ? AND key = ? AND ts > ?",
+                                 (bucket, key, self._clock() - window)).fetchone()[0]
+            return count >= limit
+        finally:
+            conn.close()
+
+    def record(self, bucket, key, window) -> None:
+        if not self._db_path:
+            return self._mem_record(bucket, key, window)
+        conn = self._connect()
+        try:
+            conn.execute("INSERT INTO rate_hits (bucket, key, ts) VALUES (?, ?, ?)",
+                         (bucket, key, self._clock()))
+        finally:
+            conn.close()
 
 
 # ---------------------------------------------------------------- статика
@@ -472,7 +530,7 @@ class AppServer(ThreadingHTTPServer):
         self.quiet = quiet
         self.order_limit = order_limit
         self.event_limit = event_limit
-        self.limiter = RateLimiter()
+        self.limiter = RateLimiter(clock=time.time, db_path=self.db_path)
         super().__init__(address, Handler)
 
 
