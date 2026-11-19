@@ -16,9 +16,9 @@
     });
   }
   function num(v) { var n = Number(v); return isFinite(n) ? n : 0; }
-  var rub = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 });
-  var intFmt = new Intl.NumberFormat('ru-RU');
-  function money(v) { return rub.format(num(v)); }
+  var uah = new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'UAH', maximumFractionDigits: 0 });
+  var intFmt = new Intl.NumberFormat('uk-UA');
+  function money(v) { return uah.format(num(v)); }
   function count(v) { return intFmt.format(num(v)); }
   function safeColor(c) { return /^#[0-9a-f]{3,8}$/i.test(String(c || '')) ? c : '#1E40AF'; }
   function attrSel(name, val) { return '[' + name + '="' + String(val).replace(/["\\]/g, '\\$&') + '"]'; }
@@ -27,7 +27,7 @@
   function fmtDate(v) {
     if (!v) return '—';
     var d = new Date(v);
-    return isNaN(d.getTime()) ? String(v) : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return isNaN(d.getTime()) ? String(v) : d.toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
   // Хранилище может быть недоступно (приватный режим, запрет): тогда сайт работает без него
   function getStore(kind, key) { try { var s = window[kind]; return s ? s.getItem(key) : null; } catch (e) { return null; } }
@@ -327,9 +327,9 @@
     phone: function (v) {
       var digits = v.replace(/\D/g, '');
       return (/^\+?[\d\s()\-]+$/.test(v) && digits.length >= 10 && digits.length <= 15)
-        ? '' : 'Укажите телефон, например +7\u00A0900\u00A0123\u201145\u201167';
+        ? '' : 'Укажите украинский телефон, например +380\u00A067\u00A0123\u201145\u201167';
     },
-    email: function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? '' : 'Укажите почту, например name@mail.ru'; },
+    email: function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? '' : 'Укажите почту, например name@ukr.net'; },
     address: function (v) { return v.length >= 5 ? '' : 'Укажите адрес доставки: город, улицу и дом'; }
   };
 
@@ -927,7 +927,7 @@
       return '<tr>' +
         '<td>' + esc(p.name) + '</td>' +
         '<td data-label="Категория">' + esc(p.category) + '</td>' +
-        '<td data-label="Цена, ₽"><label class="visually-hidden" for="price-' + id + '">Цена: ' + esc(p.name) + '</label>' +
+        '<td data-label="Цена, ₴"><label class="visually-hidden" for="price-' + id + '">Цена: ' + esc(p.name) + '</label>' +
           '<input class="num-input" id="price-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.price) + '"></td>' +
         '<td data-label="Остаток, шт."><label class="visually-hidden" for="stock-' + id + '">Остаток: ' + esc(p.name) + '</label>' +
           '<input class="num-input" id="stock-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.stock) + '"></td>' +
@@ -983,7 +983,7 @@
       var problem = '';
       if (data.name.length < 2) problem = 'Укажите название товара';
       else if (!data.category) problem = 'Укажите категорию';
-      else if (!isInt(data.price)) problem = 'Цена — целое число, в рублях';
+      else if (!isInt(data.price)) problem = 'Цена — целое число, в гривнах';
       else if (!isInt(data.stock)) problem = 'Остаток — целое число, не меньше нуля';
       errBox.textContent = problem;
       errBox.hidden = !problem;
