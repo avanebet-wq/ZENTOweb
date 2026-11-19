@@ -1,11 +1,18 @@
-/* ZENTO: вход и регистрация. Экран входа #gate (обязательный), сайт #site скрыт до входа.
+/* ZENTO: вход, регистрация и восстановление пароля. Экран входа #gate (обязательный), сайт #site скрыт до входа.
    Аватар в шапке, капча — window.ZentoCaptcha (captcha.js). Сообщаем магазину (app.js) событием zento:session.
-   Данные с сервера выводим только через textContent. Правила полей совпадают с договором (CONTRACT.md). */
+   Данные с сервера выводим только через textContent. Правила полей совпадают с договором 2.
+   Клавиатура: фокус на поле ставим только после нажатия пользователя (клик или отправка формы),
+   но не при загрузке страницы и не после ответа сервера. */
 (function () {
   'use strict';
 
   var NET_MSG = 'Нет связи с сервером, попробуйте ещё раз';
+  var MAIL_MSG = 'Не получилось отправить письмо. Попробуйте позже';
+  var SENT_MSG = 'Если аккаунт найден, код отправлен на почту';
   var TICKET_MS = 290 * 1000; // билет живёт 300 с, держим небольшой запас
+  var RESEND_MS = 60 * 1000; // «Отправить код снова» доступна через 60 секунд
+  var NICK_RE = /^[A-Za-zА-Яа-яЁёІіЇїЄєҐґ0-9_]+$/;
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   var LETTER_RE = /[A-Za-zА-Яа-яЁёІіЇїЄєҐґ]/;
   var LOWER_RE = /[a-zа-яёіїєґ]/;
   var UPPER_RE = /[A-ZА-ЯЁІЇЄҐ]/;
@@ -37,27 +44,48 @@
     registerError: $('register-error'),
     loginSubmit: $('login-submit'),
     registerSubmit: $('register-submit'),
-    phone: $('r-phone'),
+    forgot: $('forgot-btn'),
     pwMeter: $('pw-meter'),
     pwHint: $('pw-hint'),
-    toast: $('toast')
+    toast: $('toast'),
+    resetDialog: $('reset-dialog'),
+    resetClose: $('reset-close'),
+    resetTitle: $('reset-title'),
+    resetStep1: $('reset-step1'),
+    resetStep2: $('reset-step2'),
+    resetRequestForm: $('reset-request-form'),
+    resetConfirmForm: $('reset-confirm-form'),
+    resetRequestSubmit: $('reset-request-submit'),
+    resetConfirmSubmit: $('reset-confirm-submit'),
+    resetRequestError: $('reset-request-error'),
+    resetConfirmError: $('reset-confirm-error'),
+    resetNote: $('reset-note'),
+    resetResend: $('reset-resend'),
+    resetTimer: $('reset-timer'),
+    resetBack: $('reset-back')
   };
 
   // Ключ поля -> [id поля ввода, id его ошибки]
   var F = {
     login: ['l-login', 'le-login'],
     lpass: ['l-pass', 'le-pass'],
-    name: ['r-name', 're-name'],
-    phone: ['r-phone', 're-phone'],
-    email: ['r-email', 're-email'],
+    nick: ['r-nick', 're-nick'],
     pass: ['r-pass', 're-pass'],
     pass2: ['r-pass2', 're-pass2'],
-    consent: ['r-consent', 're-consent']
+    email: ['r-email', 're-email'],
+    consent: ['r-consent', 're-consent'],
+    rlogin: ['rq-login', 'rq-error'],
+    code: ['rc-code', 'rc-code-err'],
+    rpass: ['rc-pass', 're-rpass'],
+    rpass2: ['rc-pass2', 're-rpass2']
   };
   var LOGIN_KEYS = ['login', 'lpass'];
-  var REG_KEYS = ['name', 'phone', 'email', 'pass', 'pass2', 'consent'];
-  // Ключи полей, которые приходят с сервера (fields), -> наши ключи
-  var SERVER_KEY = { name: 'name', phone: 'phone', email: 'email', password: 'pass', consent: 'consent' };
+  var REG_KEYS = ['nick', 'pass', 'pass2', 'email', 'consent'];
+  var RESET_KEYS = ['code', 'rpass', 'rpass2'];
+  // Поля из ответа сервера (fields) -> наши ключи; для каждой формы свой набор
+  var REG_MAP = { nick: 'nick', password: 'pass', password2: 'pass2', email: 'email', agree: 'consent' };
+  var RESET_REQ_MAP = { login: 'rlogin' };
+  var RESET_MAP = { code: 'code', password: 'rpass', password2: 'rpass2' };
 
   var user = null;
   var busy = false;
@@ -65,6 +93,8 @@
   var ticketExp = 0;
   var notifyTimer = 0;
   var gateTimer = 0;
+  // Состояние окна восстановления: чей логин, и когда снова можно отправить код
+  var resend = { login: '', until: 0, timer: 0 };
 
   /* ---------- Сеть ---------- */
   // Возвращает {status, data}. Сетевой сбой — отклонённый промис (сообщение NET_MSG).
@@ -138,6 +168,7 @@
     box.hidden = !msg;
   }
 
+  // Фокус на первое поле с ошибкой. Вызываем только из обработчика отправки формы (нажатие пользователя)
   function focusFirstInvalid(keys) {
     for (var i = 0; i < keys.length; i++) {
       var inp = input(keys[i]);
@@ -145,18 +176,39 @@
     }
   }
 
+  // Разбирает fields из ответа сервера: ставит ошибки у полей, остальное отдаёт текстом
+  function applyFields(d, map) {
+    var rest = [];
+    var shown = false;
+    var fields = d && d.fields;
+    if (fields && typeof fields === 'object') {
+      Object.keys(fields).forEach(function (sk) {
+        var msg = String(fields[sk] || '');
+        var key = map[sk];
+        if (!msg) return;
+        if (key && F[key]) { setErr(key, msg); shown = true; }
+        else rest.push(msg);
+      });
+    }
+    return { shown: shown, rest: rest };
+  }
+
   function setBusy(on) {
     busy = on;
     els.loginSubmit.disabled = on;
     els.registerSubmit.disabled = on;
+    els.resetRequestSubmit.disabled = on;
+    els.resetConfirmSubmit.disabled = on;
+    renderResend();
   }
 
   /* ---------- Аватар ---------- */
-  function initialsOf(name) {
-    var words = String(name || '').trim().split(/\s+/).filter(Boolean);
-    var out = '';
-    if (words[0]) out += words[0].charAt(0);
+  // Инициалы из ника: «Ivan_99» -> «IV», «Анна Петрова» -> «АП»
+  function initialsOf(nick) {
+    var words = String(nick || '').trim().split(/[\s_]+/).filter(Boolean);
+    var out = words[0] ? words[0].charAt(0) : '';
     if (words[1]) out += words[1].charAt(0);
+    else if (words[0] && words[0].length > 1) out += words[0].charAt(1);
     return out.toUpperCase() || '?';
   }
 
@@ -167,16 +219,18 @@
   function setUser(u) {
     user = u && typeof u === 'object' ? u : null;
     if (user) {
-      var name = String(user.name || '');
+      var nick = String(user.nick || '');
+      var mail = String(user.email || '');
       els.guest.toggleAttribute('hidden', true);
       els.initials.hidden = false;
-      els.initials.textContent = initialsOf(name);
+      els.initials.textContent = initialsOf(nick);
       els.btn.classList.add('is-user');
-      els.btn.setAttribute('aria-label', 'Аккаунт: ' + name + '. Открыть меню');
+      els.btn.setAttribute('aria-label', 'Аккаунт: ' + (nick || 'вход выполнен') + '. Открыть меню');
       els.btn.setAttribute('aria-haspopup', 'true');
       els.btn.setAttribute('aria-expanded', 'false');
-      els.accName.textContent = name;
-      els.accMail.textContent = String(user.email || '');
+      els.accName.textContent = nick || 'Аккаунт';
+      els.accMail.textContent = mail;
+      els.accMail.hidden = !mail;
     } else {
       els.guest.toggleAttribute('hidden', false);
       els.initials.hidden = true;
@@ -212,6 +266,7 @@
 
   // Экран входа обязательный: без крестика и без закрытия по клику в фон.
   // state: 'guest' — форма входа и регистрации; 'down' — только сообщение, что сайт недоступен
+  // Фокус здесь не ставим: страница открывается без клавиатуры
   function showGate(state) {
     clearTimeout(gateTimer);
     els.gate.classList.remove('is-leaving');
@@ -219,11 +274,7 @@
     els.site.hidden = true;
     els.gateCard.hidden = state !== 'guest';
     els.gateDown.hidden = state !== 'down';
-    if (state === 'guest') {
-      setTab('login');
-      // Фокус — на вкладку «Вход», не на поле: клавиатура на телефоне сама не открывается
-      els.tabLogin.focus({ preventScroll: true });
-    }
+    if (state === 'guest') setTab('login');
   }
 
   // Экран входа мягко растворяется, сайт проявляется под ним
@@ -251,11 +302,13 @@
     if (focusAvatar) els.btn.focus({ preventScroll: true });
   }
 
-  // Вышли или сессия кончилась: снова экран входа, товары и корзина скрыты
-  function leaveSite() {
+  // Вышли или сессия кончилась: снова экран входа, товары и корзина скрыты.
+  // byUser — выход нажал пользователь: тогда фокус на вкладку «Вход»
+  function leaveSite(byUser) {
     setUser(null);
     closeMenu();
     showGate('guest');
+    if (byUser) els.tabLogin.focus({ preventScroll: true });
     emitSession('out');
   }
 
@@ -289,33 +342,20 @@
   }
 
   /* ---------- Проверки (как на сервере) ---------- */
-  function checkName(v) {
+  function checkNick(v) {
     var s = v.trim();
-    if (s.length < 2) return 'Введите имя: от 2 до 50 символов';
-    if (s.length > 50) return 'Имя — не больше 50 символов';
-    if (/[0-9<>]/.test(s)) return 'В имени не должно быть цифр и знаков < >';
+    if (!s) return 'Придумайте ник';
+    if (s.length < 3) return 'Ник: от 3 до 20 символов';
+    if (s.length > 20) return 'Ник: не больше 20 символов';
+    if (!NICK_RE.test(s)) return 'В нике только буквы, цифры и знак _';
     return '';
   }
 
-  // В поле телефона всегда «+380 67 123 45 67»; возвращаем цифры без кода страны.
-  // Код снимаем в цикле: при вставке в поле с уже стоящим +380 он может прийти дважды.
-  function phoneNational(v) {
-    var d = String(v || '').replace(/\D/g, '');
-    while (d.indexOf('380') === 0) d = d.slice(3);
-    return d;
-  }
-
-  function checkPhone(v) {
-    var n = phoneNational(v);
-    if (!n) return 'Введите телефон в формате +380 67 123 45 67';
-    if (n.length !== 9) return 'Телефон: нужно 9 цифр после +380';
-    return '';
-  }
-
+  // Почта необязательна: пусто — проверки нет
   function checkEmail(v) {
     var s = v.trim();
-    if (!s) return 'Введите почту';
-    if (s.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return 'Почта выглядит неверно, например name@ukr.net';
+    if (!s) return '';
+    if (s.length > 254 || !EMAIL_RE.test(s)) return 'Почта выглядит неверно, например name@ukr.net';
     return '';
   }
 
@@ -353,25 +393,12 @@
     els.pwHint.textContent = lvl ? 'Надёжность пароля: ' + LEVEL_TEXT[lvl] : '';
   }
 
-  // Маска телефона: всегда +380 и до 9 цифр
-  function formatPhone(raw) {
-    if (!String(raw || '').trim()) return '';
-    var all = String(raw).replace(/\D/g, '');
-    // Если пользователь стёр часть «380», это не номер: оставляем только «+380»
-    var d = '380'.indexOf(all) === 0 ? '' : phoneNational(all);
-    d = d.replace(/^0/, '').slice(0, 9);
-    if (!d) return '+380';
-    var parts = [d.slice(0, 2), d.slice(2, 5), d.slice(5, 7), d.slice(7, 9)].filter(Boolean);
-    return '+380 ' + parts.join(' ');
-  }
-
   function readRegister() {
     return {
-      name: input('name').value,
-      phone: input('phone').value,
-      email: input('email').value,
+      nick: input('nick').value,
       pass: input('pass').value,
       pass2: input('pass2').value,
+      email: input('email').value,
       consent: input('consent').checked
     };
   }
@@ -379,34 +406,17 @@
   // Проверка всей формы регистрации; возвращает {ключ: текст} и ставит ошибки у полей
   function validateRegister(v) {
     var errs = {};
-    errs.name = checkName(v.name);
-    errs.phone = checkPhone(v.phone);
-    errs.email = checkEmail(v.email);
+    errs.nick = checkNick(v.nick);
     errs.pass = checkPassword(v.pass);
     errs.pass2 = checkPassword2(v.pass2, v.pass);
-    errs.consent = v.consent ? '' : 'Нужно согласие на обработку персональных данных';
+    errs.email = checkEmail(v.email);
+    errs.consent = v.consent ? '' : 'Нужно принять правила сервиса';
     REG_KEYS.forEach(function (k) { setErr(k, errs[k]); });
     return errs;
   }
 
   function hasErrors(errs) {
     return Object.keys(errs).some(function (k) { return !!errs[k]; });
-  }
-
-  // Ошибки с сервера (fields): по своим полям; что не удалось привязать — в общую строку
-  function showServerFields(fields, keysOrder) {
-    var rest = [];
-    var shown = false;
-    if (fields && typeof fields === 'object') {
-      Object.keys(fields).forEach(function (sk) {
-        var msg = String(fields[sk] || '');
-        var key = SERVER_KEY[sk];
-        if (key && F[key]) { setErr(key, msg); shown = true; }
-        else if (msg) rest.push(msg);
-      });
-    }
-    if (keysOrder) focusFirstInvalid(keysOrder);
-    return { shown: shown, rest: rest };
   }
 
   /* ---------- Регистрация с капчей ---------- */
@@ -423,7 +433,8 @@
           ticketExp = Date.now() + TICKET_MS;
           var v = readRegister();
           var errs = validateRegister(v); // поля могли поменяться, пока шла капча
-          if (hasErrors(errs)) { focusFirstInvalid(REG_KEYS); return; }
+          // Ошибки уже видны у полей; фокус после капчи сами не ставим
+          if (hasErrors(errs)) return;
           sendRegister(v);
         },
         onCancel: function () {
@@ -442,13 +453,14 @@
     setBusy(true);
     els.registerSubmit.textContent = 'Создаём аккаунт…';
     var body = {
-      name: v.name.trim(),
-      phone: '+380' + phoneNational(v.phone),
-      email: v.email.trim().toLowerCase(),
+      nick: v.nick.trim(),
       password: v.pass,
-      captcha_ticket: ticket,
-      consent: true
+      password2: v.pass2,
+      agree: true,
+      captcha_ticket: ticket
     };
+    var mail = v.email.trim().toLowerCase();
+    if (mail) body.email = mail; // пустую почту не отправляем
     request('POST', '/api/auth/register', body).then(function (r) {
       var d = r.data || {};
       if ((r.status === 201 || r.status === 200) && d.ok && d.user) {
@@ -463,15 +475,22 @@
         openCaptcha();
         return;
       }
-      if (r.status === 409 || d.error === 'already_registered') {
-        var res = showServerFields(d.fields, ['phone', 'email']);
-        if (!res.shown) formErr(els.registerError, d.message || 'Такой телефон или почта уже зарегистрированы');
-        else if (res.rest.length) formErr(els.registerError, res.rest.join(' '));
+      if (d.error === 'rules_not_accepted') {
+        setErr('consent', 'Чтобы создать аккаунт, примите правила сервиса');
+        return;
+      }
+      if (r.status === 409 || d.error === 'nick_taken' || d.error === 'email_taken') {
+        var res = applyFields(d, REG_MAP);
+        if (!res.shown && !res.rest.length) {
+          if (d.error === 'email_taken') setErr('email', 'Эта почта уже зарегистрирована');
+          else setErr('nick', 'Этот ник уже занят');
+        }
+        formErr(els.registerError, res.rest.join(' '));
         return;
       }
       if (r.status === 400 || d.error === 'validation_error') {
-        var res2 = showServerFields(d.fields, REG_KEYS);
-        if (res2.rest.length || !res2.shown) formErr(els.registerError, res2.rest.join(' ') || d.message || 'Проверьте поля формы');
+        var res2 = applyFields(d, REG_MAP);
+        formErr(els.registerError, res2.rest.join(' ') || (res2.shown ? '' : (d.message || 'Проверьте поля формы')));
         return;
       }
       if (r.status === 429) {
@@ -502,8 +521,7 @@
       if (r.status === 429 || d.error === 'too_many_attempts') {
         formErr(els.loginError, 'Слишком много попыток. Подождите немного');
       } else if (r.status === 401 || d.error === 'invalid_credentials') {
-        formErr(els.loginError, 'Неверный телефон или пароль');
-        input('lpass').focus();
+        formErr(els.loginError, 'Неверная почта, ник или пароль');
       } else {
         formErr(els.loginError, d.message || 'Не получилось войти. Попробуйте ещё раз.');
       }
@@ -519,16 +537,19 @@
     setUser(u);
     els.loginForm.reset();
     els.registerForm.reset();
+    clearKeys(LOGIN_KEYS.concat(REG_KEYS));
+    formErr(els.loginError, '');
+    formErr(els.registerError, '');
     updateStrength();
     enterSite(true);
-    notify('Добро пожаловать, ' + String(u.name || '') + '!');
+    notify('Добро пожаловать, ' + String(u.nick || '') + '!');
   }
 
   function logout() {
     if (busy) return;
     request('POST', '/api/auth/logout', {}).then(function (r) {
       if (r.status === 200 && (r.data.ok !== false)) {
-        leaveSite();
+        leaveSite(true);
         notify('Вы вышли из аккаунта');
         return;
       }
@@ -537,6 +558,182 @@
     }).catch(function () {
       notify(NET_MSG);
       els.btn.focus();
+    });
+  }
+
+  /* ---------- Окно «Забыли пароль?» ---------- */
+  // Таймер «Отправить код снова»: считаем по времени, а не по тикам, чтобы не сбивался в фоне
+  function resendLeft() {
+    return Math.max(0, Math.ceil((resend.until - Date.now()) / 1000));
+  }
+
+  function renderResend() {
+    var left = resendLeft();
+    els.resetResend.disabled = busy || left > 0;
+    els.resetTimer.textContent = left > 0 ? 'через ' + left + ' с' : '';
+  }
+
+  function startResend() {
+    clearInterval(resend.timer);
+    resend.until = Date.now() + RESEND_MS;
+    resend.timer = setInterval(function () {
+      renderResend();
+      if (resendLeft() <= 0) { clearInterval(resend.timer); resend.timer = 0; }
+    }, 1000);
+    renderResend();
+  }
+
+  function stopResend() {
+    clearInterval(resend.timer);
+    resend.timer = 0;
+    resend.until = 0;
+    resend.login = '';
+  }
+
+  function showResetStep(n) {
+    els.resetStep1.hidden = n !== 1;
+    els.resetStep2.hidden = n !== 2;
+  }
+
+  // Сбрасываем окно к первому шагу: без старых кодов, паролей и ошибок
+  function resetDialogState() {
+    stopResend();
+    input('rlogin').value = '';
+    input('code').value = '';
+    input('rpass').value = '';
+    input('rpass2').value = '';
+    clearKeys(['rlogin'].concat(RESET_KEYS));
+    formErr(els.resetRequestError, '');
+    formErr(els.resetConfirmError, '');
+    els.resetNote.textContent = '';
+    els.resetRequestSubmit.textContent = 'Отправить код';
+    els.resetConfirmSubmit.textContent = 'Сохранить и войти';
+    showResetStep(1);
+    renderResend();
+  }
+
+  function openReset() {
+    var dlg = els.resetDialog;
+    resetDialogState();
+    input('rlogin').value = input('login').value.trim();
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    // Окно открыл сам пользователь (клик по ссылке), поэтому фокус на поле почты или ника — можно
+    input('rlogin').focus({ preventScroll: true });
+  }
+
+  function closeReset() {
+    var dlg = els.resetDialog;
+    if (dlg.open) dlg.close(); // событие close сбросит окно
+    else resetDialogState();
+  }
+
+  // Шаг 1 — отправка запроса. again — повторная отправка с шага 2 (из кнопки «Отправить код снова»)
+  function sendResetRequest(login, again) {
+    if (busy) return;
+    var box = again ? els.resetConfirmError : els.resetRequestError;
+    formErr(box, '');
+    setBusy(true);
+    if (!again) els.resetRequestSubmit.textContent = 'Отправляем…';
+    request('POST', '/api/auth/reset/request', { login: login }).then(function (r) {
+      var d = r.data || {};
+      if (r.status === 200 && d.ok) {
+        // Ответ всегда один и тот же: не показываем, есть ли аккаунт
+        resend.login = login;
+        els.resetNote.textContent = SENT_MSG;
+        showResetStep(2);
+        startResend();
+        if (!again) els.resetTitle.focus({ preventScroll: true });
+        return;
+      }
+      if (r.status === 429 || d.error === 'too_many_requests') {
+        formErr(box, d.message || 'Слишком много запросов. Подождите немного');
+        return;
+      }
+      if (r.status === 503 || d.error === 'mail_failed') {
+        formErr(box, MAIL_MSG);
+        return;
+      }
+      if (r.status === 400 || d.error === 'validation_error') {
+        var res = applyFields(d, RESET_REQ_MAP);
+        formErr(box, res.rest.join(' ') || (res.shown ? '' : (d.message || 'Введите почту или ник')));
+        return;
+      }
+      formErr(box, d.message || 'Не получилось отправить код. Попробуйте ещё раз.');
+    }).catch(function () {
+      formErr(box, NET_MSG);
+    }).then(function () {
+      setBusy(false);
+      if (!again) els.resetRequestSubmit.textContent = 'Отправить код';
+    });
+  }
+
+  function readReset() {
+    return {
+      code: input('code').value,
+      pass: input('rpass').value,
+      pass2: input('rpass2').value
+    };
+  }
+
+  function validateReset(v) {
+    var errs = {};
+    errs.code = /^[0-9]{6}$/.test(v.code.trim()) ? '' : 'Введите 6 цифр из письма';
+    errs.rpass = checkPassword(v.pass);
+    errs.rpass2 = checkPassword2(v.pass2, v.pass);
+    RESET_KEYS.forEach(function (k) { setErr(k, errs[k]); });
+    return errs;
+  }
+
+  // Шаг 2 — код и новый пароль. Успех — сразу сайт, как после входа
+  function sendResetConfirm(v) {
+    if (busy) return;
+    formErr(els.resetConfirmError, '');
+    setBusy(true);
+    els.resetConfirmSubmit.textContent = 'Сохраняем…';
+    request('POST', '/api/auth/reset/confirm', {
+      login: resend.login,
+      code: v.code.trim(),
+      password: v.pass,
+      password2: v.pass2
+    }).then(function (r) {
+      var d = r.data || {};
+      var box = els.resetConfirmError;
+      if (r.status === 200 && d.ok && d.user) {
+        closeReset();
+        onAuthed(d.user);
+        return;
+      }
+      if (d.error === 'code_invalid') {
+        setErr('code', 'Код неверный. Проверьте письмо и введите его ещё раз');
+        return;
+      }
+      if (d.error === 'code_expired') {
+        formErr(box, 'Код истёк. Нажмите «Отправить код снова»');
+        return;
+      }
+      if (d.error === 'code_attempts_exceeded') {
+        formErr(box, 'Слишком много неверных попыток. Нажмите «Отправить код снова»');
+        return;
+      }
+      if (d.error === 'mail_failed') {
+        formErr(box, MAIL_MSG);
+        return;
+      }
+      if (r.status === 429 || d.error === 'too_many_attempts') {
+        formErr(box, d.message || 'Слишком много попыток. Подождите немного');
+        return;
+      }
+      if (r.status === 400 || d.error === 'validation_error') {
+        var res = applyFields(d, RESET_MAP);
+        formErr(box, res.rest.join(' ') || (res.shown ? '' : (d.message || 'Проверьте поля формы')));
+        return;
+      }
+      formErr(box, d.message || 'Не получилось сохранить пароль. Попробуйте ещё раз.');
+    }).catch(function () {
+      formErr(els.resetConfirmError, NET_MSG);
+    }).then(function () {
+      setBusy(false);
+      els.resetConfirmSubmit.textContent = 'Сохранить и войти';
     });
   }
 
@@ -562,7 +759,7 @@
 
     // Магазин узнал, что вход кончился (401 на товарах): снова экран входа
     document.addEventListener('zento:need-login', function () {
-      leaveSite();
+      leaveSite(false);
       notify('Сессия закончилась. Войдите снова');
     });
 
@@ -585,7 +782,7 @@
       e.preventDefault();
       var login = input('login').value.trim();
       var pass = input('lpass').value;
-      setErr('login', login ? '' : 'Введите телефон или почту');
+      setErr('login', login ? '' : 'Введите почту или ник');
       setErr('lpass', pass ? '' : 'Введите пароль');
       if (!login || !pass) { focusFirstInvalid(LOGIN_KEYS); return; }
       sendLogin(login, pass);
@@ -593,21 +790,11 @@
     LOGIN_KEYS.forEach(function (k) {
       input(k).addEventListener('input', function () { setErr(k, ''); });
     });
+    els.forgot.addEventListener('click', openReset);
 
     // Регистрация
-    var regInputs = ['name', 'email', 'pass2'];
-    regInputs.forEach(function (k) {
+    ['nick', 'email', 'pass2'].forEach(function (k) {
       input(k).addEventListener('input', function () { setErr(k, ''); });
-    });
-    els.phone.addEventListener('focus', function () {
-      if (!els.phone.value) els.phone.value = '+380 ';
-    });
-    els.phone.addEventListener('blur', function () {
-      if (phoneNational(els.phone.value) === '') els.phone.value = '';
-    });
-    els.phone.addEventListener('input', function () {
-      els.phone.value = formatPhone(els.phone.value);
-      setErr('phone', '');
     });
     input('pass').addEventListener('input', function () {
       setErr('pass', '');
@@ -625,10 +812,49 @@
       ticket = '';
       openCaptcha();
     });
+
+    // Окно восстановления
+    els.resetDialog.addEventListener('close', resetDialogState);
+    els.resetClose.addEventListener('click', closeReset);
+    els.resetBack.addEventListener('click', function () {
+      showResetStep(1);
+      formErr(els.resetRequestError, '');
+      input('rlogin').value = resend.login || input('rlogin').value;
+      input('rlogin').focus({ preventScroll: true }); // нажатие пользователя
+    });
+    els.resetRequestForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var login = input('rlogin').value.trim();
+      setErr('rlogin', login ? '' : 'Введите почту или ник');
+      if (!login) { input('rlogin').focus(); return; }
+      sendResetRequest(login, false);
+    });
+    input('rlogin').addEventListener('input', function () { setErr('rlogin', ''); });
+    // Код — только цифры, не больше шести (вставка из письма тоже обрезается)
+    input('code').addEventListener('input', function () {
+      var c = input('code');
+      var clean = c.value.replace(/\D/g, '').slice(0, 6);
+      if (c.value !== clean) c.value = clean;
+      setErr('code', '');
+    });
+    input('rpass').addEventListener('input', function () { setErr('rpass', ''); });
+    input('rpass2').addEventListener('input', function () { setErr('rpass2', ''); });
+    els.resetConfirmForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (busy) return;
+      var v = readReset();
+      var errs = validateReset(v);
+      if (hasErrors(errs)) { focusFirstInvalid(RESET_KEYS); return; }
+      sendResetConfirm(v);
+    });
+    els.resetResend.addEventListener('click', function () {
+      if (busy || resendLeft() > 0 || !resend.login) return;
+      sendResetRequest(resend.login, true);
+    });
   }
 
   function init() {
-    if (!els.btn || !els.gate || !els.site || !els.loginForm || !els.registerForm) return;
+    if (!els.btn || !els.gate || !els.site || !els.loginForm || !els.registerForm || !els.resetDialog) return;
     bind();
     updateStrength();
     loadMe();
