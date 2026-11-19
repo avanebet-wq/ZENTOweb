@@ -1079,7 +1079,7 @@ class UsersMigrationTest(unittest.TestCase):
         ])
         self.assertEqual(sessions, [("hash-of-oleg-session", 2, "2099-01-01T00:00:00.000000Z")])
         self.assertEqual(set(columns), {"id", "nick", "nick_lower", "email", "password_hash", "phone",
-                                        "created_at", "rules_accepted_at"})
+                                        "created_at", "rules_accepted_at", "bio", "nick_changed_at"})
 
     def test_second_and_third_runs_change_nothing(self):
         store.init_db(self.db_path, products_path=None)
