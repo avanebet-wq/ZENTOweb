@@ -13,16 +13,38 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from sqlite3 import OperationalError
+from time import sleep
+from zoneinfo import ZoneInfo
 
 SERVER_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = SERVER_DIR / "schema.sql"
 
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
 ORDER_STATUSES = ("new", "paid", "shipped", "done", "cancelled")
+# Разрешённые переходы статуса. Отмена окончательная: товар уже вернули на склад,
+# и заново резервировать его при «возврате из отмены» нельзя без конфликтов.
+ORDER_TRANSITIONS = {
+    "new": ("paid", "cancelled"),
+    "paid": ("shipped", "cancelled"),
+    "shipped": ("done",),
+    "done": (),
+    "cancelled": (),
+}
+# Неоплаченный заказ в статусе new отменяется автоматически через это время.
+ORDER_TTL_MINUTES = 60
+
 MAX_QTY = 99
 MAX_ORDER_ITEMS = 50
+MAX_INT_DIGITS = 18          # длиннее — 400, чтобы не упереться в лимиты SQLite
 STATS_DAYS = 14
 TOP_PRODUCTS = 5
 MAX_SEARCH_LEN = 100
+
+DB_TIMEOUT_SECONDS = 10
+DB_RETRY_ATTEMPTS = 3
 
 PRODUCT_FIELDS = ("name", "category", "price", "description", "color", "stock")
 PUBLIC_PRODUCT_COLUMNS = "id, name, category, price, description, color, stock"
@@ -32,6 +54,7 @@ PHONE_CHARS_RE = re.compile(r"^\+?[0-9 ()\-.]+$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 COLOR_FORBIDDEN_RE = re.compile(r"[<>\"'\\;{}]")
 INT_TEXT_RE = re.compile(r"^\s*-?\d+\s*$")
+LONG_NUMBER_RE = re.compile(r"^\s*[+-]?[0-9]+\s*$")
 
 
 class ValidationError(Exception):
@@ -54,11 +77,21 @@ def utc_now() -> datetime:
 
 
 def to_iso(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return moment.astimezone(timezone.utc).strftime(TIMESTAMP_FORMAT)
+
+
+def parse_iso(text: str) -> datetime:
+    return datetime.strptime(text, TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
 
 
 def new_product_id() -> str:
     return "p" + secrets.token_hex(6)
+
+
+def is_too_long_number(text) -> bool:
+    """True, если строка — число длиннее MAX_INT_DIGITS цифр."""
+    text = str(text)
+    return bool(LONG_NUMBER_RE.match(text)) and len(text.strip().lstrip("+-").strip()) > MAX_INT_DIGITS
 
 
 # ---------------------------------------------------------------- соединение
@@ -70,7 +103,7 @@ def _lower_unicode(value):
 
 
 def connect(db_path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=5, isolation_level=None)
+    conn = sqlite3.connect(str(db_path), timeout=DB_TIMEOUT_SECONDS, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.create_function("lower_unicode", 1, _lower_unicode, deterministic=True)
@@ -83,22 +116,44 @@ def transaction(conn: sqlite3.Connection):
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
+        conn.execute("COMMIT")
     except BaseException:
-        conn.execute("ROLLBACK")
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
         raise
-    conn.execute("COMMIT")
+
+
+def with_retry(func, attempts=DB_RETRY_ATTEMPTS, pause=0.05):
+    """Повторяет операцию, если SQLite ответил «database is locked». Остальные ошибки не трогаем."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return func()
+        except OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt == attempts:
+                raise
+            sleep(pause * attempt)
 
 
 # ---------------------------------------------------------------- инициализация
 
+def _migrate(conn) -> None:
+    """Добавляет колонки, которых не было в ранней версии схемы."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+    if "address" not in columns:
+        conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+
+
 def init_db(db_path, products_path=None) -> None:
-    """Создаёт таблицы и, если товаров ещё нет, заполняет их из products.json."""
+    """Создаёт таблицы, при необходимости заполняет товары из JSON и отменяет просроченные заказы."""
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        _migrate(conn)
         if products_path is not None:
             seed_products(conn, products_path)
+        with transaction(conn):
+            expire_stale_orders(conn)
     finally:
         conn.close()
 
@@ -129,14 +184,19 @@ def seed_products(conn: sqlite3.Connection, products_path) -> int:
             where = f"{path.name}, товар #{index + 1}"
             if not isinstance(raw, dict):
                 raise ValueError(f"{where}: ожидается объект")
-            # Из файла берём только поля товара; id обрабатываем отдельно, лишние поля пропускаем.
+            # Из файла берём только поля товара; лишние поля пропускаем.
             known = {key: raw[key] for key in PRODUCT_FIELDS if key in raw}
             try:
                 fields = clean_product(known)
             except ValidationError as exc:
                 raise ValueError(f"{where}: {exc.fields}") from None
             raw_id = raw.get("id")
-            product_id = str(raw_id).strip() if raw_id not in (None, "") else new_product_id()
+            if raw_id not in (None, ""):
+                if is_too_long_number(raw_id):
+                    raise ValueError(f"{where}: слишком длинный id")
+                product_id = str(raw_id).strip()
+            else:
+                product_id = new_product_id()
             # Сдвиг на микросекунду сохраняет порядок товаров из файла.
             created = to_iso(base + timedelta(microseconds=index))
             try:
@@ -154,16 +214,25 @@ def seed_products(conn: sqlite3.Connection, products_path) -> int:
 
 # ---------------------------------------------------------------- проверка полей
 
-def _as_int(value):
+def as_int(value):
+    """Превращает значение от пользователя в int. Слишком большие числа и не-числа дают None."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str) and INT_TEXT_RE.match(value):
-        return int(value)
-    return None
+        number = value
+    elif isinstance(value, float):
+        if not value.is_integer() or abs(value) >= 10 ** MAX_INT_DIGITS:
+            return None
+        number = int(value)
+    elif isinstance(value, str):
+        if not INT_TEXT_RE.match(value) or is_too_long_number(value):
+            return None
+        number = int(value)
+    else:
+        return None
+    if abs(number) >= 10 ** MAX_INT_DIGITS:
+        return None
+    return number
 
 
 def _text(value, min_len, max_len):
@@ -180,7 +249,7 @@ def _text(value, min_len, max_len):
 
 
 def _int_range(value, low, high):
-    number = _as_int(value)
+    number = as_int(value)
     if number is None:
         raise ValueError("должно быть целым числом")
     if not low <= number <= high:
@@ -287,15 +356,17 @@ def clean_items(data) -> list:
             errors[prefix] = "ожидается объект с product_id и qty"
             continue
         raw_pid = raw.get("product_id")
+        pid = None
         if isinstance(raw_pid, bool) or not isinstance(raw_pid, (str, int)) or not str(raw_pid).strip():
             errors[f"{prefix}.product_id"] = "укажите товар"
-            pid = None
+        elif is_too_long_number(raw_pid):
+            errors[f"{prefix}.product_id"] = "слишком длинный номер товара"
         else:
             pid = str(raw_pid).strip()
             if pid in seen:
                 errors[f"{prefix}.product_id"] = "этот товар уже есть в заказе"
             seen.add(pid)
-        qty = _as_int(raw.get("qty"))
+        qty = as_int(raw.get("qty"))
         if qty is None or not 1 <= qty <= MAX_QTY:
             errors[f"{prefix}.qty"] = f"количество — целое от 1 до {MAX_QTY}"
         if pid is not None and qty is not None and f"{prefix}.product_id" not in errors:
@@ -314,6 +385,13 @@ def _move_stock(conn, product_id, delta) -> bool:
         (delta, product_id, delta),
     )
     return cur.rowcount == 1
+
+
+def _restore_order_stock(conn, order_id) -> None:
+    for item in conn.execute(
+        "SELECT product_id, qty FROM order_items WHERE order_id = ?", (order_id,)
+    ).fetchall():
+        _move_stock(conn, item["product_id"], item["qty"])
 
 
 # ---------------------------------------------------------------- товары
@@ -368,6 +446,21 @@ def update_product(conn, product_id, payload) -> dict:
 
 # ---------------------------------------------------------------- заказы
 
+def expire_stale_orders(conn, now=None) -> int:
+    """Отменяет заказы в статусе new старше ORDER_TTL_MINUTES и возвращает товар на склад.
+    Вызывать внутри transaction()."""
+    cutoff = to_iso((now or utc_now()) - timedelta(minutes=ORDER_TTL_MINUTES))
+    stale = [
+        row["id"] for row in conn.execute(
+            "SELECT id FROM orders WHERE status = 'new' AND created_at < ?", (cutoff,)
+        ).fetchall()
+    ]
+    for order_id in stale:
+        _restore_order_stock(conn, order_id)
+        conn.execute("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
+    return len(stale)
+
+
 def create_order(conn, payload) -> dict:
     if not isinstance(payload, dict):
         raise ValidationError({"body": "Ожидается объект с customer и items"})
@@ -383,6 +476,10 @@ def create_order(conn, payload) -> dict:
         errors.update(exc.fields)
     if errors:
         raise ValidationError(errors)
+
+    # Сначала освобождаем просроченные заказы, чтобы их товар был доступен.
+    with transaction(conn):
+        expire_stale_orders(conn)
 
     with transaction(conn):
         # Проверяем остатки и берём цены из базы, а не из запроса.
@@ -408,7 +505,12 @@ def create_order(conn, payload) -> dict:
             "SELECT id FROM customers WHERE phone = ?", (customer["phone"],)
         ).fetchone()
         if found is not None:
+            # Клиент уже есть: обновляем его данные последними значениями.
             customer_id = found["id"]
+            conn.execute(
+                "UPDATE customers SET name = ?, email = ?, address = ? WHERE id = ?",
+                (customer["name"], customer["email"], customer["address"], customer_id),
+            )
         else:
             cur = conn.execute(
                 "INSERT INTO customers (name, phone, email, address, created_at)"
@@ -419,8 +521,9 @@ def create_order(conn, payload) -> dict:
 
         total = sum(qty * price for _, qty, price in lines)
         cur = conn.execute(
-            "INSERT INTO orders (customer_id, status, total, created_at) VALUES (?, 'new', ?, ?)",
-            (customer_id, total, now),
+            "INSERT INTO orders (customer_id, status, total, address, created_at)"
+            " VALUES (?, 'new', ?, ?, ?)",
+            (customer_id, total, customer["address"], now),
         )
         order_id = cur.lastrowid
         for product_id, qty, price in lines:
@@ -435,33 +538,33 @@ def create_order(conn, payload) -> dict:
 
 def update_order_status(conn, order_id, status) -> dict:
     if status not in ORDER_STATUSES:
-        raise ValidationError({"status": "допустимо: " + ", ".join(ORDER_STATUSES)})
+        raise ValidationError(
+            {"status": "допустимо: " + ", ".join(ORDER_STATUSES)},
+            message="Неизвестный статус",
+        )
     with transaction(conn):
         order = conn.execute("SELECT id, status FROM orders WHERE id = ?", (order_id,)).fetchone()
         if order is None:
             raise NotFound()
         old = order["status"]
-        if old != status:
-            items = conn.execute(
-                "SELECT product_id, qty FROM order_items WHERE order_id = ?", (order_id,)
-            ).fetchall()
-            if status == "cancelled":
-                # Отмена возвращает товар на склад.
-                for item in items:
-                    _move_stock(conn, item["product_id"], item["qty"])
-            elif old == "cancelled":
-                # Возврат из отмены снова резервирует товар.
-                for item in items:
-                    if not _move_stock(conn, item["product_id"], -item["qty"]):
-                        raise ValidationError({"status": "товара уже не хватает на складе"})
-            conn.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
+        allowed = ORDER_TRANSITIONS[old]
+        if status not in allowed:
+            hint = ", ".join(allowed) if allowed else "нет, статус финальный"
+            raise ValidationError(
+                {"status": f"из «{old}» нельзя перевести в «{status}». Можно: {hint}"},
+                message="Неверный переход статуса",
+            )
+        if status == "cancelled":
+            # Отмена возвращает товар на склад.
+            _restore_order_stock(conn, order_id)
+        conn.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
     return {"id": order_id, "status": status}
 
 
 def list_orders(conn) -> list:
     orders = [
         dict(row) for row in conn.execute(
-            "SELECT o.id, o.status, o.total, o.created_at,"
+            "SELECT o.id, o.status, o.total, o.address, o.created_at,"
             "       c.id AS customer_id, c.name AS customer_name,"
             "       c.phone AS customer_phone, c.email AS customer_email"
             "  FROM orders o JOIN customers c ON c.id = o.customer_id"
@@ -486,11 +589,13 @@ def list_orders(conn) -> list:
 
 
 def list_customers(conn) -> list:
+    # Отменённые заказы в количество заказов клиента не входят.
     return [
         dict(row) for row in conn.execute(
             "SELECT c.id, c.name, c.phone, c.email, c.address, c.created_at,"
             "       COUNT(o.id) AS orders_count"
-            "  FROM customers c LEFT JOIN orders o ON o.customer_id = c.id"
+            "  FROM customers c"
+            "  LEFT JOIN orders o ON o.customer_id = c.id AND o.status <> 'cancelled'"
             " GROUP BY c.id, c.name, c.phone, c.email, c.address, c.created_at"
             " ORDER BY c.created_at DESC, c.id DESC"
         )
@@ -516,6 +621,8 @@ def record_event(conn, payload) -> None:
     if raw_pid is not None:
         if isinstance(raw_pid, bool) or not isinstance(raw_pid, (str, int)):
             errors["product_id"] = "должно быть строкой"
+        elif is_too_long_number(raw_pid):
+            errors["product_id"] = "слишком длинный номер товара"
         else:
             product_id = str(raw_pid).strip() or None
     if errors:
@@ -530,17 +637,18 @@ def record_event(conn, payload) -> None:
 
 
 def get_stats(conn, now=None) -> dict:
-    """Статистика. Отменённые заказы в выручку и в количество не входят."""
-    now = now or utc_now()
-    first_day = now.astimezone(timezone.utc).date() - timedelta(days=STATS_DAYS - 1)
-    since = to_iso(datetime.combine(first_day, time.min, tzinfo=timezone.utc))
+    """Статистика. Дни считаются по Москве. Отменённые заказы в выручку и в количество не входят.
+    Просмотры — только события с type = 'view'."""
+    local_now = (now or utc_now()).astimezone(MOSCOW_TZ)
+    first_day = local_now.date() - timedelta(days=STATS_DAYS - 1)
+    since = to_iso(datetime.combine(first_day, time.min, tzinfo=MOSCOW_TZ))
 
     totals = conn.execute(
         "SELECT COUNT(*) AS orders_count, COALESCE(SUM(total), 0) AS revenue"
         "  FROM orders WHERE status <> 'cancelled'"
     ).fetchone()
     customers_count = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
-    views_count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    views_count = conn.execute("SELECT COUNT(*) FROM events WHERE type = 'view'").fetchone()[0]
     top_products = [
         dict(row) for row in conn.execute(
             "SELECT oi.product_id AS id, p.name AS name, SUM(oi.qty) AS qty"
@@ -554,25 +662,20 @@ def get_stats(conn, now=None) -> dict:
             (TOP_PRODUCTS,),
         )
     ]
-    by_day = {
-        row["day"]: row for row in conn.execute(
-            "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS count,"
-            "       COALESCE(SUM(total), 0) AS revenue"
-            "  FROM orders"
-            " WHERE status <> 'cancelled' AND created_at >= ?"
-            " GROUP BY substr(created_at, 1, 10)",
-            (since,),
-        )
-    }
+    # Группируем по московскому дню в Python: в SQL нет удобного часового пояса.
+    by_day = {}
+    for row in conn.execute(
+        "SELECT created_at, total FROM orders WHERE status <> 'cancelled' AND created_at >= ?",
+        (since,),
+    ):
+        day = parse_iso(row["created_at"]).astimezone(MOSCOW_TZ).date().isoformat()
+        count, revenue = by_day.get(day, (0, 0))
+        by_day[day] = (count + 1, revenue + row["total"])
     orders_by_day = []
     for offset in range(STATS_DAYS):
         day = (first_day + timedelta(days=offset)).isoformat()
-        row = by_day.get(day)
-        orders_by_day.append({
-            "day": day,
-            "count": row["count"] if row else 0,
-            "revenue": row["revenue"] if row else 0,
-        })
+        count, revenue = by_day.get(day, (0, 0))
+        orders_by_day.append({"day": day, "count": count, "revenue": revenue})
     return {
         "orders_count": totals["orders_count"],
         "revenue": totals["revenue"],

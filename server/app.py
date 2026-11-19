@@ -14,7 +14,10 @@ import json
 import os
 import re
 import sys
+import threading
+import time
 import traceback
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -25,26 +28,41 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = ROOT / "data" / "store.db"
 DEFAULT_PRODUCTS = ROOT / "data" / "products.json"
 
+# ---------------------------------------------------------------- настройки
+
 MAX_BODY_BYTES = 64 * 1024
-# Тело больше лимита читаем и выбрасываем (до 1 МБ), чтобы клиент получил ответ 413, а не обрыв связи.
+# Тело больше лимита (но не больше 1 МБ) читаем и выбрасываем, чтобы клиент получил ответ 413, а не обрыв связи.
 DISCARD_LIMIT_BYTES = 1024 * 1024
 
-# Эти папки никогда не отдаются как статика: в data/ лежит база с персональными данными.
-HIDDEN_DIRS = {"server", "tests", "data", "__pycache__"}
+HANDLER_TIMEOUT_SECONDS = 10       # висящие соединения закрываются через 10 секунд
+
+ORDER_RATE_LIMIT = 10              # заказов с одного IP
+ORDER_RATE_WINDOW = 60             # за столько секунд
+EVENT_RATE_LIMIT = 120             # событий с одного IP
+EVENT_RATE_WINDOW = 60
+
+ADMIN_FAIL_LIMIT = 10              # неверных входов в админку с одного IP
+ADMIN_FAIL_WINDOW = 15 * 60        # за столько секунд; потом блокировка 429
+MIN_ADMIN_TOKEN_LENGTH = 32
+
+# Эти папки никогда не отдаются как статика (сравнение без учёта регистра).
+HIDDEN_DIRS = {"server", "tests", "data"}
+# Только эти расширения отдаются как статика.
 STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
     ".webp": "image/webp",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
     ".woff2": "font/woff2",
-    ".txt": "text/plain; charset=utf-8",
+    ".ico": "image/x-icon",
 }
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' ; img-src 'self' data:"
+)
 
 
 class ApiError(Exception):
@@ -56,7 +74,56 @@ class ApiError(Exception):
         self.body = body
 
 
+# ---------------------------------------------------------------- лимиты
+
+class RateLimiter:
+    """Скользящее окно по ключу (обычно IP). Хранит только времена попаданий."""
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._hits: dict[tuple[str, str], deque] = {}
+
+    def _window(self, bucket, key, window):
+        """Возвращает очередь попаданий внутри окна и текущее время. Вызывать под блокировкой."""
+        now = self._clock()
+        hits = self._hits.get((bucket, key))
+        if hits is None:
+            return deque(), now
+        while hits and now - hits[0] >= window:
+            hits.popleft()
+        if not hits:
+            del self._hits[(bucket, key)]
+            return deque(), now
+        return hits, now
+
+    def try_hit(self, bucket, key, limit, window) -> bool:
+        """Записывает попадание, если лимит не исчерпан. False — лимит исчерпан, попадание не записано."""
+        with self._lock:
+            hits, now = self._window(bucket, key, window)
+            if len(hits) >= limit:
+                return False
+            hits.append(now)
+            self._hits[(bucket, key)] = hits
+            return True
+
+    def is_over(self, bucket, key, limit, window) -> bool:
+        with self._lock:
+            hits, _ = self._window(bucket, key, window)
+            return len(hits) >= limit
+
+    def record(self, bucket, key, window) -> None:
+        with self._lock:
+            hits, now = self._window(bucket, key, window)
+            hits.append(now)
+            self._hits[(bucket, key)] = hits
+
+
 # ---------------------------------------------------------------- статика
+
+def _is_hidden(part: str) -> bool:
+    return part.startswith(".") or part.lower() in HIDDEN_DIRS
+
 
 def resolve_static(root: Path, url_path: str):
     """Возвращает (путь к файлу, Content-Type) или None. Не выпускает файлы за пределы root."""
@@ -66,15 +133,15 @@ def resolve_static(root: Path, url_path: str):
     if raw == "" or raw.endswith("/"):
         raw += "index.html"
     parts = [part for part in raw.split("/") if part]
-    if not parts or any(part.startswith(".") for part in parts):
+    if not parts or any(part in (".", "..") or _is_hidden(part) for part in parts):
         return None
     candidate = (root / Path(*parts)).resolve()
     try:
         relative = candidate.relative_to(root)
     except ValueError:
         return None
-    # Проверяем уже после разрешения ссылок: симлинк не должен открывать скрытые папки.
-    if any(part.startswith(".") or part in HIDDEN_DIRS for part in relative.parts):
+    # Проверяем и после разрешения ссылок: симлинк не должен открывать скрытые папки.
+    if any(_is_hidden(part) for part in relative.parts):
         return None
     content_type = STATIC_TYPES.get(candidate.suffix.lower())
     if content_type is None or not candidate.is_file():
@@ -84,28 +151,37 @@ def resolve_static(root: Path, url_path: str):
 
 # ---------------------------------------------------------------- обработчики API
 
-def _db(handler):
-    return store.connect(handler.server.db_path)
-
-
 def _run(handler, func, *args):
-    """Открывает базу на один запрос и переводит ошибки store в HTTP-ответы."""
-    conn = _db(handler)
+    """Открывает базу на один запрос, повторяет при блокировке и переводит ошибки store в HTTP."""
+    def attempt():
+        conn = store.connect(handler.server.db_path)
+        try:
+            return func(conn, *args)
+        finally:
+            conn.close()
+
     try:
-        return func(conn, *args)
+        return store.with_retry(attempt)
     except store.ValidationError as exc:
         raise ApiError(400, {"error": exc.message, "fields": exc.fields}) from None
     except store.NotFound:
         raise ApiError(404, {"error": "not found"}) from None
-    finally:
-        conn.close()
 
 
-def _path_int(text):
-    number = store._as_int(text)
+def _admin_number(text):
+    """Числовой id из пути админки. Слишком длинный номер — 400, не числовой — 404."""
+    if store.is_too_long_number(text):
+        raise ApiError(400, {"error": "invalid id", "fields": {"id": "слишком длинный номер"}})
+    number = store.as_int(text)
     if number is None:
         raise ApiError(404, {"error": "not found"})
     return number
+
+
+def _admin_text_id(text):
+    if store.is_too_long_number(text):
+        raise ApiError(400, {"error": "invalid id", "fields": {"id": "слишком длинный номер"}})
+    return text
 
 
 def _products_list(handler, params, query):
@@ -124,11 +200,13 @@ def _product_get(handler, params, query):
 
 
 def _order_create(handler, params, query):
+    handler._check_rate("orders", handler.server.order_limit, ORDER_RATE_WINDOW)
     payload = handler._read_json()
     return 201, _run(handler, store.create_order, payload)
 
 
 def _event_create(handler, params, query):
+    handler._check_rate("events", handler.server.event_limit, EVENT_RATE_WINDOW)
     payload = handler._read_json()
     _run(handler, store.record_event, payload)
     return 204, None
@@ -143,7 +221,7 @@ def _admin_orders(handler, params, query):
 
 
 def _admin_order_patch(handler, params, query):
-    order_id = _path_int(params["id"])
+    order_id = _admin_number(params["id"])
     payload = handler._read_json()
     if not isinstance(payload, dict):
         raise ApiError(400, {"error": "Проверьте заполненные поля", "fields": {"body": "ожидается объект"}})
@@ -166,8 +244,9 @@ def _admin_product_create(handler, params, query):
 
 
 def _admin_product_patch(handler, params, query):
+    product_id = _admin_text_id(params["id"])
     payload = handler._read_json()
-    return 200, _run(handler, store.update_product, params["id"], payload)
+    return 200, _run(handler, store.update_product, product_id, payload)
 
 
 ROUTES = [
@@ -190,6 +269,8 @@ ROUTES = [
 class Handler(BaseHTTPRequestHandler):
     server_version = "ZENTO"
     sys_version = ""
+    # Соединение, которое молчит дольше этого времени, закрывается.
+    timeout = HANDLER_TIMEOUT_SECONDS
 
     def do_GET(self):
         self._handle("GET")
@@ -221,7 +302,13 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 raise ApiError(405, {"error": "method not allowed"})
         except ApiError as exc:
-            self._send_json(exc.status, exc.body)
+            body = exc.body
+            if exc.status == 400 and isinstance(body, dict):
+                body = {**body, "fields": body.get("fields", {})}
+            self._send_json(exc.status, body)
+        except (TimeoutError, ConnectionError):
+            # Клиент молчит или оборвал соединение: отвечать некому, просто закрываем.
+            self.close_connection = True
         except Exception:
             # В лог пишем только место ошибки, без тела запроса и заголовков.
             print(f"Внутренняя ошибка: {method} {path}", file=sys.stderr)
@@ -232,7 +319,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/admin" or path.startswith("/api/admin/"):
             if not self.server.admin_token:
                 raise ApiError(503, {"error": "admin disabled"})
+            ip = self.client_address[0]
+            if self.server.limiter.is_over("admin", ip, ADMIN_FAIL_LIMIT, ADMIN_FAIL_WINDOW):
+                raise ApiError(429, {"error": "too many requests"})
             if not self._is_admin():
+                self.server.limiter.record("admin", ip, ADMIN_FAIL_WINDOW)
                 raise ApiError(401, {"error": "unauthorized"})
         path_matched = False
         for route_method, pattern, func in ROUTES:
@@ -247,6 +338,10 @@ class Handler(BaseHTTPRequestHandler):
         if path_matched:
             raise ApiError(405, {"error": "method not allowed"})
         raise ApiError(404, {"error": "not found"})
+
+    def _check_rate(self, bucket, limit, window):
+        if not self.server.limiter.try_hit(bucket, self.client_address[0], limit, window):
+            raise ApiError(429, {"error": "too many requests"})
 
     def _is_admin(self):
         scheme, _, token = self.headers.get("Authorization", "").partition(" ")
@@ -299,6 +394,8 @@ class Handler(BaseHTTPRequestHandler):
     def _security_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
 
     def _send_json(self, status, body):
         self.send_response(status)
@@ -346,17 +443,26 @@ class AppServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, *, db_path, admin_token, static_root=ROOT, quiet=False):
+    def __init__(self, address, *, db_path, admin_token, static_root=ROOT, quiet=False,
+                 order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT):
         self.db_path = Path(db_path)
         self.admin_token = admin_token or None
         self.static_root = Path(static_root).resolve()
         self.quiet = quiet
+        self.order_limit = order_limit
+        self.event_limit = event_limit
+        self.limiter = RateLimiter()
         super().__init__(address, Handler)
 
 
 def create_server(host, port, *, db_path=DEFAULT_DB, products_path=DEFAULT_PRODUCTS,
-                  admin_token=None, static_root=ROOT, quiet=False) -> AppServer:
-    """Готовит базу (создаёт и при необходимости заполняет) и возвращает сервер, который ещё не запущен."""
+                  admin_token=None, static_root=ROOT, quiet=False,
+                  order_limit=ORDER_RATE_LIMIT, event_limit=EVENT_RATE_LIMIT) -> AppServer:
+    """Готовит базу (создаёт, заполняет, отменяет просроченные заказы) и возвращает сервер, который ещё не запущен."""
+    if admin_token and len(admin_token) < MIN_ADMIN_TOKEN_LENGTH:
+        raise ValueError(
+            f"ADMIN_TOKEN слишком короткий: нужно не меньше {MIN_ADMIN_TOKEN_LENGTH} символов"
+        )
     store.init_db(db_path, products_path)
     return AppServer(
         (host, port),
@@ -364,6 +470,8 @@ def create_server(host, port, *, db_path=DEFAULT_DB, products_path=DEFAULT_PRODU
         admin_token=admin_token,
         static_root=static_root,
         quiet=quiet,
+        order_limit=order_limit,
+        event_limit=event_limit,
     )
 
 
@@ -385,7 +493,7 @@ def main(argv=None) -> int:
             db_path=args.db, products_path=args.products, admin_token=admin_token,
         )
     except ValueError as exc:
-        print(f"Ошибка запуска: {exc}", file=sys.stderr)
+        print(f"Сервер не запущен: {exc}", file=sys.stderr)
         return 1
 
     print(f"ZENTO запущен: http://{args.host}:{server.server_port}", flush=True)

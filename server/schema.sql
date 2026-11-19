@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS orders (
     status      TEXT NOT NULL DEFAULT 'new'
                 CHECK (status IN ('new', 'paid', 'shipped', 'done', 'cancelled')),
     total       INTEGER NOT NULL CHECK (total >= 0),
+    address     TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL
 );
 
