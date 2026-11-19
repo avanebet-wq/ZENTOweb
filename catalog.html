@@ -12,8 +12,6 @@
   <script src="app.js" defer></script>
 </head>
 <body data-page="shop">
-  <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
-
   <!-- Экран входа: обязательный. Пока сайт не знает, что вы вошли, он на весь экран, а магазин скрыт -->
   <section class="gate" id="gate" aria-label="Вход в ZENTO">
     <div class="gate-inner">
@@ -222,7 +220,7 @@
     </main>
 
     <div class="container">
-      <footer class="site-footer glass">
+      <footer class="site-footer">
         <p>© ZENTO. Все права защищены.</p>
       </footer>
     </div>
@@ -239,7 +237,7 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
           </button>
         </div>
-        <div class="sheet-visual"><span class="art art-xl" id="p-art" aria-hidden="true"></span></div>
+        <div class="sheet-visual"><span class="art art-xl" id="p-art"></span></div>
         <h2 id="p-title"></h2>
         <p class="stock" id="p-stock"></p>
         <p class="p-desc" id="p-desc"></p>
@@ -320,15 +318,15 @@
   <script src="captcha.js" defer></script>
   <script src="auth.js" defer></script>
 <script src="profile.js" defer></script>
-  <dialog class="sheet profile-dialog" id="profile-dialog" aria-labelledby="profile-title">
-    <div class="sheet-body glass surface profile-body">
-      <span class="sheet-handle" aria-hidden="true"></span>
-      <div class="profile-head">
-        <h2 id="profile-title" tabindex="-1">Мой профиль</h2>
-        <button class="icon-btn press" type="button" id="profile-close" aria-label="Закрыть профиль">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+<dialog class="profile-screen" id="profile-dialog" aria-labelledby="profile-title">
+    <div class="profile-body surface">
+      <header class="pf-top">
+        <button class="icon-btn press" type="button" id="profile-close" aria-label="Назад">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>
         </button>
-      </div>
+        <h2 id="profile-title" tabindex="-1">Профиль</h2>
+        <span class="pf-top-spacer" aria-hidden="true"></span>
+      </header>
 
       <div class="profile-scroll" id="profile-scroll">
         <div class="pf-loading" id="pf-loading" hidden>
@@ -337,39 +335,95 @@
         </div>
 
         <div id="pf-editor" hidden>
-          <div class="pf-cover">
-            <button class="pf-banner press" type="button" id="pf-banner" aria-label="Сменить баннер">
-              <span class="pf-view" id="pf-banner-view" aria-hidden="true"></span>
-              <span class="pf-pill" aria-hidden="true">Изменить</span>
-            </button>
+          <div class="pf-hero">
             <button class="pf-avatar press" type="button" id="pf-avatar" aria-label="Сменить фото профиля">
               <span class="pf-view" id="pf-avatar-view" aria-hidden="true"></span>
               <span class="pf-badge" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
               </span>
+            </button>
+            <p class="pf-name" id="pf-name"></p>
+          </div>
+
+          <div class="pf-actions">
+            <button class="pf-action press" type="button" id="pf-act-photo">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+              <span id="pf-act-photo-text">Выбрать фото</span>
+            </button>
+            <button class="pf-action press" type="button" id="pf-act-nick" aria-controls="pf-nick-block">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
+              <span>Изменить ник</span>
+            </button>
+            <button class="pf-action press" type="button" id="pf-act-settings">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+              <span>Настройки</span>
             </button>
           </div>
 
           <div class="pf-photo-actions">
             <button class="link-btn press" type="button" id="pf-avatar-del">Удалить фото</button>
-            <button class="link-btn press" type="button" id="pf-banner-del">Удалить баннер</button>
           </div>
           <p class="field-error" id="pf-photo-err" aria-live="polite" hidden></p>
 
-          <form id="pf-form" novalidate>
-            <div class="field">
-              <label for="pf-nick">Ник</label>
-              <input id="pf-nick" name="nick" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" aria-describedby="pf-nick-hint pf-nick-err">
-              <p class="field-hint" id="pf-nick-hint">От 3 до 20 символов: буквы, цифры и знак _. Ник можно менять раз в 30 дней.</p>
-              <p class="field-error" id="pf-nick-err" aria-live="polite" hidden></p>
+          <section class="pf-nick" id="pf-nick-block" hidden>
+            <form id="pf-form" novalidate>
+              <div class="field">
+                <label for="pf-nick">Ник</label>
+                <input id="pf-nick" name="nick" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" aria-describedby="pf-nick-hint pf-nick-err">
+                <p class="field-hint" id="pf-nick-hint">От 3 до 20 символов: буквы, цифры и знак _. Ник можно менять раз в 30 дней.</p>
+                <p class="field-error" id="pf-nick-err" aria-live="polite" hidden></p>
+              </div>
+            </form>
+          </section>
+
+          <dl class="pf-info">
+            <div class="pf-row"><dt>Ваш ID</dt><dd id="pf-id"></dd></div>
+            <div class="pf-row"><dt>@username</dt><dd id="pf-at"></dd></div>
+            <div class="pf-row"><dt>Как давно с нами</dt><dd id="pf-since"></dd></div>
+          </dl>
+
+          <section class="pf-ach" aria-labelledby="pf-ach-title">
+            <div class="pf-ach-head">
+              <h3 id="pf-ach-title">Достижения</h3>
+              <p class="pf-ach-count" id="pf-ach-count"></p>
             </div>
+            <ul class="pf-ach-grid" id="pf-ach-grid" tabindex="0" aria-labelledby="pf-ach-title"></ul>
+            <p class="field-hint" id="pf-ach-empty" hidden>Пока нет достижений.</p>
+            <div class="pf-tip" id="pf-tip" hidden>
+              <h4 id="pf-tip-title" tabindex="-1"></h4>
+              <p class="pf-tip-kicker" id="pf-tip-kicker"></p>
+              <p class="pf-tip-label" id="pf-tip-label" hidden>Как получить</p>
+              <p class="pf-tip-text" id="pf-tip-text"></p>
+              <button class="btn btn-ghost btn-small press" type="button" id="pf-tip-close">Закрыть</button>
+            </div>
+          </section>
+        </div>
+
+        <div id="pf-settings" hidden>
+          <div class="pf-group">
             <div class="field">
-              <label for="pf-bio">Описание</label>
+              <label for="pf-bio">О себе</label>
               <textarea id="pf-bio" name="bio" rows="4" aria-describedby="pf-bio-count pf-bio-err"></textarea>
               <p class="pf-count" id="pf-bio-count">0 / 300</p>
               <p class="field-error" id="pf-bio-err" aria-live="polite" hidden></p>
             </div>
-          </form>
+          </div>
+
+          <div class="pf-group">
+            <p class="pf-group-title" id="pf-banner-title">Баннер</p>
+            <button class="pf-banner press" type="button" id="pf-banner" aria-label="Сменить баннер">
+              <span class="pf-view" id="pf-banner-view" aria-hidden="true"></span>
+              <span class="pf-pill" aria-hidden="true">Изменить</span>
+            </button>
+            <div class="pf-photo-actions">
+              <button class="link-btn press" type="button" id="pf-banner-del">Удалить баннер</button>
+            </div>
+            <p class="field-error" id="pf-banner-err" aria-live="polite" hidden></p>
+          </div>
+
+          <div class="pf-group">
+            <button class="btn btn-ghost btn-block press" type="button" id="logout-btn">Выйти из аккаунта</button>
+          </div>
         </div>
 
         <div id="pf-crop" hidden>

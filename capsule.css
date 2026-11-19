@@ -1,21 +1,9 @@
 /* Капелька входа: появляется под шапкой после входа (capsule.js).
-   Стекло как у .glass, обводка переливается. Блюр только на экранах от 720 px. */
+   Плоская поверхность с тонкой линией. Без блюра, без переливов и вращения. */
 
 :root {
-  --capsule-ok: #16A34A;
+  --capsule-ok: #4CC38A;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --capsule-ok: #4ADE80; }
-}
-:root[data-theme="dark"] { --capsule-ok: #4ADE80; }
-
-/* Угол для вращения обводки. Без @property вращения не будет: остаётся статичный градиент */
-@property --angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-@keyframes capsule-spin { from { --angle: 0deg; } to { --angle: 360deg; } }
 
 /* Контейнер: поверх страницы, не перехватывает нажатия. Положение (top) ставит capsule.js */
 .capsule {
@@ -31,48 +19,17 @@
 
 .capsule-card {
   position: relative;
-  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
-  min-height: 60px;
-  padding: 8px 18px 8px 8px;
-  border: 1px solid var(--glass-rim-soft);
+  min-height: 56px;
+  padding: 6px 16px 6px 6px;
+  border: 1px solid var(--hairline);
   border-radius: 999px;
-  background: var(--glass-bg);
+  background: var(--raised);
   color: var(--color-foreground);
-  box-shadow: var(--glass-shadow), var(--glass-inner);
   opacity: 0;
-}
-
-/* Переливающаяся обводка: цветной конус, видна только кольцом */
-.capsule-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  padding: 1.5px;
-  background: conic-gradient(from var(--angle),
-    rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.95) 12%,
-    rgba(147, 197, 253, 0.85) 25%, rgba(255, 255, 255, 0.15) 40%,
-    rgba(134, 239, 172, 0.75) 60%, rgba(255, 255, 255, 0.15) 75%,
-    rgba(255, 255, 255, 0.95) 90%, rgba(255, 255, 255, 0.15));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  pointer-events: none;
-}
-/* Блик сверху слева, как у .glass */
-.capsule-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background: radial-gradient(120% 70% at 0% 0%, rgba(255, 255, 255, 0.22), transparent 55%);
-  pointer-events: none;
 }
 
 .capsule-avatar {
@@ -80,10 +37,10 @@
   width: 44px; height: 44px;
   display: grid; place-items: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, #1E40AF 0%, #7C3AED 100%);
-  color: #fff;
-  font-weight: 800; font-size: 0.95rem; line-height: 1; letter-spacing: 0.03em;
-  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.30);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600; font-size: 0.95rem; line-height: 1;
+  position: relative; overflow: hidden;
 }
 
 .capsule-text {
@@ -91,7 +48,7 @@
   min-width: 0;
   line-height: 1.25;
 }
-.capsule-title { font-weight: 700; font-size: 1rem; white-space: nowrap; }
+.capsule-title { font-weight: 600; font-size: 0.98rem; white-space: nowrap; }
 .capsule-nick {
   max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -106,51 +63,30 @@
 /* Галочка рисуется: pathLength=1, штрих сначала пустой */
 .capsule-check path { stroke-dasharray: 1; stroke-dashoffset: 1; }
 
-/* Появление: пружина 600 мс */
+/* Появление: короткий подъём и проявление */
 @keyframes capsule-in {
-  from { opacity: 0; transform: scale(0.6); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
 }
-/* Уход: 400 мс */
+/* Уход: 300 мс */
 @keyframes capsule-out {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.94) translateY(-6px); }
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(-6px); }
 }
 @keyframes capsule-draw { to { stroke-dashoffset: 0; } }
 
-.capsule.is-on .capsule-card { animation: capsule-in 600ms var(--ease-spring) both; }
-.capsule.is-on.is-leaving .capsule-card { animation: capsule-out 400ms var(--ease-in) both; }
-/* Галочка стартует через 350 мс и рисуется 450 мс */
-.capsule.is-on .capsule-check path { animation: capsule-draw 450ms ease-out 350ms both; }
-.capsule.is-on.has-angle .capsule-card::before { animation: capsule-spin 3.2s linear infinite; }
+.capsule.is-on .capsule-card { animation: capsule-in 320ms var(--ease-out) both; }
+.capsule.is-on.is-leaving .capsule-card { animation: capsule-out 300ms var(--ease-in) both; }
+/* Галочка стартует через 200 мс и рисуется 380 мс */
+.capsule.is-on .capsule-check path { animation: capsule-draw 380ms ease-out 200ms both; }
 
-/* На телефоне без блюра: плотное стекло (--glass-bg). С 720 px — блюр поверх страницы */
-@media (min-width: 720px) {
-  .capsule-card {
-    background: var(--glass-bg-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-  }
-}
-
-/* Меньше прозрачности: сплошной фон, без блюра */
-@media (prefers-reduced-transparency: reduce) {
-  .capsule-card {
-    background: var(--surface-solid) !important;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
-}
-
-/* Меньше движения: без вращения и без анимаций, капелька статичная. Звук не отключаем */
+/* Меньше движения: без анимаций, капелька статичная. Звук не отключаем */
 @media (prefers-reduced-motion: reduce) {
   .capsule.is-on .capsule-card { animation: none; opacity: 1; }
   .capsule.is-on .capsule-check path { animation: none; stroke-dashoffset: 0; }
-  .capsule.is-on.has-angle .capsule-card::before { animation: none; }
   .capsule.is-on.is-leaving .capsule-card { animation: none; opacity: 0; }
 }
 
 /* Фото вместо инициалов: круг обрезает картинку, инициалы остаются под ней, если фото нет */
-.capsule-avatar { position: relative; overflow: hidden; }
 .capsule-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .capsule-photo[hidden] { display: none; }
