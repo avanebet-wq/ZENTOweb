@@ -39,6 +39,8 @@ HANDLER_TIMEOUT_SECONDS = 10       # висящие соединения зак�
 
 ORDER_RATE_LIMIT = 10              # заказов с одного IP
 ORDER_RATE_WINDOW = 60             # за столько секунд
+ORDER_GLOBAL_LIMIT = 60            # заказов со всего магазина вместе (страховка, не зависит от IP)
+ORDER_GLOBAL_WINDOW = 60           # за столько секунд
 EVENT_RATE_LIMIT = 120             # событий с одного IP
 EVENT_RATE_WINDOW = 60
 
@@ -280,6 +282,8 @@ def _product_get(handler, params, query):
 
 def _order_create(handler, params, query):
     handler._check_rate("orders", handler.server.order_limit, ORDER_RATE_WINDOW)
+    if not handler.server.limiter.try_hit("orders_all", "all", ORDER_GLOBAL_LIMIT, ORDER_GLOBAL_WINDOW):
+        raise ApiError(429, {"error": "too many requests"})
     payload = handler._read_json()
     return 201, _run(handler, store.create_order, payload)
 
