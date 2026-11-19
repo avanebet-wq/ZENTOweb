@@ -105,6 +105,7 @@ AUTH_ERRORS = {
     "banner_too_large": (413, "Баннер больше 4 МБ. Выберите картинку поменьше"),
     "image_type_unsupported": (415, "Подходят только картинки PNG, JPEG и WEBP"),
     "image_invalid": (400, "Картинка повреждена или слишком большая"),
+    "not_found": (404, "Покупатель не найден"),
 }
 
 # Эти папки никогда не отдаются как статика (сравнение без учёта регистра).
@@ -443,6 +444,13 @@ def _admin_product_patch(handler, params, query):
     product_id = _admin_text_id(params["id"])
     payload = handler._read_json()
     return 200, _run(handler, store.update_product, product_id, payload)
+
+
+def _admin_achievement_grant(handler, params, query):
+    """POST /api/admin/achievements/grant: {"login": почта или ник, "code": код достижения}."""
+    payload = _auth_json(handler)
+    result = _run_auth(handler, store.grant_achievement_by_login, payload, store.utc_now())
+    return 200, {"ok": True, **result}
 
 
 def make_backup(db_path) -> bytes:
@@ -812,6 +820,7 @@ ROUTES = [
     ("POST", re.compile(r"^/api/admin/products$"), _admin_product_create),
     ("PATCH", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_patch),
     ("GET", re.compile(r"^/api/admin/backup$"), _admin_backup),
+    ("POST", re.compile(r"^/api/admin/achievements/grant$"), _admin_achievement_grant),
     ("GET", re.compile(r"^/api/profile/me$"), _profile_me),
     ("PATCH", re.compile(r"^/api/profile$"), _profile_patch),
     ("PUT", re.compile(r"^/api/profile/avatar$"), _profile_put_avatar),

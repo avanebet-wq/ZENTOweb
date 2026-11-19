@@ -76,8 +76,12 @@ CREATE TABLE IF NOT EXISTS users (
     created_at        TEXT NOT NULL,
     rules_accepted_at TEXT NOT NULL,
     bio               TEXT NOT NULL DEFAULT '',
-    nick_changed_at   TEXT
+    nick_changed_at   TEXT,
+    public_id         TEXT UNIQUE
 );
+
+-- Публичный ID покупателя: 10 цифр строкой (с ведущими нулями). Выдаёт store._new_public_id().
+-- Старым базам колонку добавляет store._migrate_public_ids() (там UNIQUE задаётся индексом).
 
 -- Коды восстановления пароля: один код на пользователя (новый заменяет старый). Только хеш.
 CREATE TABLE IF NOT EXISTS reset_codes (
@@ -128,6 +132,24 @@ CREATE TABLE IF NOT EXISTS user_images (
     sha256       TEXT NOT NULL,
     updated_at   TEXT NOT NULL,
     PRIMARY KEY (user_id, kind)
+);
+
+-- Достижения: каталог (заполняет store.seed_achievements при старте, INSERT OR IGNORE).
+-- Порядок показа — порядок вставки (rowid). Картинка — имя файла в assets/achievements/.
+CREATE TABLE IF NOT EXISTS achievements (
+    code        TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    how_to      TEXT NOT NULL DEFAULT '',
+    image       TEXT NOT NULL DEFAULT ''
+);
+
+-- Выданные достижения покупателя. Одна строка на пару (покупатель, достижение): повтор не дублирует.
+CREATE TABLE IF NOT EXISTS user_achievements (
+    user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    code       TEXT NOT NULL REFERENCES achievements (code),
+    granted_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, code)
 );
 
 -- Старый ник после смены держится 30 дней: его не может взять другой покупатель.
