@@ -36,6 +36,7 @@ import store  # noqa: E402
 
 KYIV = ZoneInfo("Europe/Kyiv")
 TOKEN = "test-admin-token-0123456789abcdefghij"   # 40 символов, не короче 32
+SHOP_BOT = "test-shop-bot-token-0123456789abcdef"  # токен бота по умолчанию в тестах, не короче 32
 BIG_LIMIT = 1000  # в обычных тестах лимиты не мешают; сами лимиты проверяем отдельно
 
 PRODUCTS = [
@@ -62,7 +63,13 @@ def minutes_ago(minutes):
 
 
 class ServerTestCase(unittest.TestCase):
-    """Базовый класс: временные файлы и запущенный сервер."""
+    """Базовый класс: временные файлы и запущенный сервер.
+
+    Товары и заказы закрыты для гостей (401 login_required). Поэтому по умолчанию сервер поднимается
+    с токеном бота, а request() сам добавляет его к запросам товаров и заказов. Чтобы проверить гостя
+    или вход, передайте anonymous=True или свой заголовок Authorization/Cookie."""
+
+    shop_bot_token = SHOP_BOT
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="zento-test-"))
@@ -88,6 +95,7 @@ class ServerTestCase(unittest.TestCase):
                           order_limit=BIG_LIMIT, event_limit=BIG_LIMIT)
 
     def start_server(self, admin_token, db_name, **limits):
+        limits.setdefault("bot_token", self.shop_bot_token)
         db_path = self.tmp / db_name
         server = app.create_server(
             "127.0.0.1", 0,
@@ -111,10 +119,15 @@ class ServerTestCase(unittest.TestCase):
         self.addCleanup(stop)
         return server
 
-    def request(self, method, path, body=None, raw=None, headers=None):
+    def request(self, method, path, body=None, raw=None, headers=None, anonymous=False):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         self.addCleanup(conn.close)
         send_headers = dict(headers or {})
+        bot = getattr(self.server, "bot_token", None)
+        needs_login = path.split("?", 1)[0].startswith(("/api/products", "/api/orders"))
+        has_auth = any(name.lower() in ("authorization", "cookie") for name in send_headers)
+        if bot and needs_login and not anonymous and not has_auth:
+            send_headers["Authorization"] = f"Bearer {bot}"
         data = raw
         if body is not None:
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")

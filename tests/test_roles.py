@@ -70,6 +70,8 @@ class BotRoleTest(ServerTestCase):
 
 
 class NoBotTokenTest(ServerTestCase):
+    shop_bot_token = None
+
     def test_bot_token_is_useless_when_not_configured(self):
         # В базовом сервере токена бота нет: любой чужой токен — просто неверный вход.
         resp = self.request("GET", "/api/admin/stats", headers={"Authorization": f"Bearer {BOT}"})
