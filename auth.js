@@ -542,7 +542,7 @@
     formErr(els.registerError, '');
     updateStrength();
     enterSite(true);
-    notify('Добро пожаловать, ' + String(u.nick || '') + '!');
+    document.dispatchEvent(new CustomEvent('zento:login', { detail: { user: u } }));
   }
 
   function logout() {
