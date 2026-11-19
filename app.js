@@ -155,7 +155,6 @@
   var apiOnline = false;
   var loadFailed = false;
   var activeCat = 'all';
-  var searchText = '';
   var currentId = null;
   var cart = readCart();
 
@@ -525,20 +524,15 @@
   function renderGrid() {
     var grid = el('grid');
     var status = el('catalog-status');
-    el('catalog-title').textContent = searchText.trim()
-      ? 'Поиск: ' + searchText.trim()
-      : (activeCat === 'all' ? 'Все товары' : activeCat);
+    el('catalog-title').textContent = activeCat === 'all' ? 'Все товары' : activeCat;
     grid.setAttribute('aria-busy', 'false');
     if (loadFailed) {
       status.textContent = '';
       grid.innerHTML = '<li class="empty">Не удалось загрузить товары. Обновите страницу, пожалуйста.</li>';
       return;
     }
-    var q = searchText.trim().toLowerCase();
     var list = products.filter(function (p) {
-      if (activeCat !== 'all' && p.category !== activeCat) return false;
-      if (!q) return true;
-      return [p.name, p.category, p.description].join(' ').toLowerCase().indexOf(q) !== -1;
+      return activeCat === 'all' || p.category === activeCat;
     });
     status.textContent = 'Товаров: ' + list.length;
     grid.innerHTML = '';
@@ -556,20 +550,9 @@
 
   function pickCategory(key) {
     activeCat = key;
-    searchText = '';
-    el('search-input').value = '';
     markChips();
     renderGrid();
     scrollToCatalog();
-  }
-
-  function onSearch(e) {
-    searchText = e.target.value;
-    if (searchText.trim() && activeCat !== 'all') {
-      activeCat = 'all';
-      markChips();
-    }
-    renderGrid();
   }
 
   function renderAll() {
@@ -643,8 +626,6 @@
       renderCart();
       el('cart-title').focus();
     });
-    el('search-input').addEventListener('input', onSearch);
-    el('search-form').addEventListener('submit', function (e) { e.preventDefault(); scrollToCatalog(); });
     el('order-form').addEventListener('submit', onOrderSubmit);
     renderBadge();
     renderSkeleton();

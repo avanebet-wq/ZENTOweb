@@ -25,7 +25,9 @@ jobs:
       - name: Prepare only public site files
         run: |
           mkdir -p site
-          cp index.html styles.css app.js boot.js admin.html site/
+          cp index.html styles.css app.js boot.js admin.html auth.js captcha.js captcha.css site/
+          mkdir -p site/assets
+          cp -r assets/logo.png assets/captcha site/assets/
           mkdir -p site/data
           cp data/products.json site/data/
       - uses: actions/configure-pages@v5
