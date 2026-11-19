@@ -9,8 +9,12 @@
   <link rel="stylesheet" href="capsule.css">
   <link rel="stylesheet" href="profile.css">
   <link rel="stylesheet" href="captcha.css">
+  <link rel="stylesheet" href="roulette.css">
+  <link rel="stylesheet" href="promo.css">
   <script src="boot.js"></script>
   <script src="app.js" defer></script>
+  <script src="roulette.js" defer></script>
+  <script src="promo.js" defer></script>
 </head>
 <body data-page="shop">
   <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -32,7 +36,7 @@
       </div>
 
       <div class="gate-card glass" id="gate-card" hidden>
-        <h1 class="gate-title">Войдите, чтобы смотреть товары</h1>
+        <h2 class="gate-title">Войдите, чтобы смотреть товары</h2>
 
         <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="Вход или регистрация">
           <button class="auth-tab press" type="button" role="tab" id="tab-login" aria-selected="true" aria-controls="panel-login">Вход</button>
@@ -188,62 +192,42 @@
     </div>
 
     <main id="top">
-      <section id="today" class="hero" aria-label="Выбор ZENTO" hidden>
+      <!-- Испытай удачу: колесо призов. Результат считает сервер (POST /api/roulette/spin) -->
+      <section class="section luck" id="luck" aria-labelledby="luck-title">
         <div class="container">
-          <div class="hero-card glass reveal" id="hero">
-            <div class="hero-text">
-              <p class="eyebrow">Выбор ZENTO</p>
-              <h1 id="hero-name"></h1>
-              <p class="lead" id="hero-desc"></p>
-              <p class="hero-price" id="hero-price"></p>
-              <p class="stock" id="hero-stock"></p>
-              <div class="hero-actions">
-                <button class="btn btn-primary press" type="button" id="hero-add">В корзину</button>
-                <button class="btn btn-ghost press" type="button" id="hero-open">Подробнее</button>
-              </div>
+          <div class="luck-card glass">
+            <div class="luck-stage">
+              <img class="luck-bg" src="assets/roulette/jackpot-preview-720.webp" srcset="assets/roulette/jackpot-preview-720.webp 720w, assets/roulette/jackpot-preview-1448.webp 1448w" sizes="(min-width: 720px) 640px, 100vw" width="1448" height="1086" alt="" decoding="async">
+              <h1 class="luck-title" id="luck-title">Испытай удачу!</h1>
             </div>
-            <div class="hero-visual"><span class="art art-xl" id="hero-art" aria-hidden="true"></span></div>
+            <div class="luck-body">
+              <div class="wheel-area">
+                <span class="wheel-pointer" aria-hidden="true"></span>
+                <svg class="wheel" id="wheel" viewBox="0 0 200 200" role="img" aria-label="Колесо призов">
+                  <g class="wheel-rotor" id="wheel-rotor"></g>
+                  <circle class="wheel-hub" cx="100" cy="100" r="13"></circle>
+                </svg>
+              </div>
+              <button class="btn btn-primary btn-spin press" type="button" id="spin-btn" disabled>Крутить</button>
+              <p class="luck-status" id="spin-status" role="status"></p>
+              <p class="luck-rules">Розыгрыш без покупки и ставок. Призы не имеют денежной стоимости. <a href="/rules.html">Правила</a></p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="categories" class="section" aria-labelledby="cats-title" hidden>
+      <!-- Полоса карточек: акции, новости, новинки. Данные: assets/promo.json; смена каждые 5 с (promo.js) -->
+      <section class="section promo" id="promo" role="region" aria-roledescription="carousel" aria-labelledby="promo-title">
         <div class="container">
-          <h2 id="cats-title">Категории</h2>
-        </div>
-        <div class="container">
-          <div class="chips hscroll" id="chips" role="group" tabindex="0" aria-label="Категории, листайте вправо"></div>
-        </div>
-      </section>
-
-      <section id="top-sales" class="section" aria-labelledby="h-top" hidden>
-        <div class="container">
-          <h2 id="h-top">Топ продаж</h2>
-          <ul class="rail hscroll" id="row-top" tabindex="0" aria-label="Топ продаж, листайте вправо"></ul>
-        </div>
-      </section>
-
-      <section id="new-items" class="section" aria-labelledby="h-new" hidden>
-        <div class="container">
-          <h2 id="h-new">Новинки</h2>
-          <ul class="rail hscroll" id="row-new" tabindex="0" aria-label="Новинки, листайте вправо"></ul>
-        </div>
-      </section>
-
-      <section id="sale-items" class="section" aria-labelledby="h-sale" hidden>
-        <div class="container">
-          <h2 id="h-sale">Скидки</h2>
-          <ul class="rail hscroll" id="row-sale" tabindex="0" aria-label="Скидки, листайте вправо"></ul>
-        </div>
-      </section>
-
-      <section id="catalog" class="section" aria-labelledby="catalog-title">
-        <div class="container">
-          <div class="catalog-head">
-            <h2 id="catalog-title">Все товары</h2>
-            <p class="muted" id="catalog-status" aria-live="polite"></p>
+          <div class="promo-head">
+            <h2 class="promo-heading" id="promo-title">Акции, новости и новинки</h2>
+            <button class="btn btn-ghost btn-small press promo-pause" type="button" id="promo-pause">Пауза</button>
           </div>
-          <ul class="grid" id="grid" aria-busy="true"></ul>
+          <div class="promo-viewport" id="promo-viewport" role="group" tabindex="0" aria-live="off" aria-label="Карточки: листайте стрелками или свайпом">
+            <div class="promo-track" id="promo-track"></div>
+          </div>
+          <div class="promo-dots" id="promo-dots"></div>
+          <p class="promo-more"><a class="btn btn-ghost btn-small press js-nav" href="catalog.html">Смотреть товары</a></p>
         </div>
       </section>
     </main>
@@ -254,29 +238,6 @@
       </footer>
     </div>
   </div>
-
-  <!-- Лист товара: снизу на телефоне, окно по центру на компьютере -->
-  <dialog class="sheet" id="product-dialog" aria-labelledby="p-title">
-    <div class="sheet-body glass surface">
-      <span class="sheet-handle" aria-hidden="true"></span>
-      <div class="sheet-scroll">
-        <div class="sheet-top">
-          <p class="eyebrow" id="p-cat"></p>
-          <button class="icon-btn press" type="button" data-close aria-label="Закрыть">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
-          </button>
-        </div>
-        <div class="sheet-visual"><span class="art art-xl" id="p-art" aria-hidden="true"></span></div>
-        <h2 id="p-title"></h2>
-        <p class="stock" id="p-stock"></p>
-        <p class="p-desc" id="p-desc"></p>
-        <div class="buy-row">
-          <p class="price-lg" id="p-price"></p>
-          <button class="btn btn-primary btn-block press" type="button" id="p-add">В корзину</button>
-        </div>
-      </div>
-    </div>
-  </dialog>
 
   <!-- Корзина: выдвигается справа; внутри три экрана: корзина, оформление, спасибо -->
   <dialog class="drawer" id="cart-dialog" aria-labelledby="cart-title">

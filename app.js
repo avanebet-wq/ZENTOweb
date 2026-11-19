@@ -462,46 +462,57 @@
 
   function renderSkeleton() {
     var grid = el('grid');
+    if (!grid) return;
     grid.innerHTML = '';
     for (var i = 0; i < 8; i++) grid.appendChild(skeletonCard());
     grid.setAttribute('aria-busy', 'true');
   }
 
+  // Каждая функция ниже проверяет, есть ли её блок на странице: на главной товаров и категорий нет
   function fillRail(sectionId, listId, items) {
     var section = el(sectionId);
     var list = el(listId);
+    if (!section || !list) return;
     section.hidden = items.length === 0;
     list.innerHTML = '';
     items.forEach(function (p, i) { list.appendChild(productCard(p, i)); });
     reveal(list);
   }
 
+  // Блок «Выбор ZENTO» с главной убран; если его нет на странице, ничего не делаем
   function renderHero() {
     var section = el('today');
+    var art = el('hero-art');
+    if (!section || !art) return;
     var featured = products.filter(hasTag('top'))[0] || products[0];
     section.hidden = !featured;
     if (!featured) return;
-    setArt(el('hero-art'), featured);
-    el('hero-name').textContent = featured.name;
-    el('hero-desc').textContent = featured.description || '';
-    el('hero-price').innerHTML = priceHTML(featured);
-    setStockLine(el('hero-stock'), featured);
+    setArt(art, featured);
+    if (el('hero-name')) el('hero-name').textContent = featured.name;
+    if (el('hero-desc')) el('hero-desc').textContent = featured.description || '';
+    if (el('hero-price')) el('hero-price').innerHTML = priceHTML(featured);
+    if (el('hero-stock')) setStockLine(el('hero-stock'), featured);
     var add = el('hero-add');
-    add.setAttribute('data-add', String(featured.id));
-    add.disabled = num(featured.stock) <= 0;
-    el('hero-open').setAttribute('data-open', String(featured.id));
-    reveal(el('hero'));
+    if (add) {
+      add.setAttribute('data-add', String(featured.id));
+      add.disabled = num(featured.stock) <= 0;
+    }
+    if (el('hero-open')) el('hero-open').setAttribute('data-open', String(featured.id));
+    if (el('hero')) reveal(el('hero'));
   }
 
   function renderChips() {
+    var box = el('chips');
+    var section = el('categories');
+    if (!box || !section) return;
     var cats = [];
     products.forEach(function (p) { if (cats.indexOf(p.category) === -1) cats.push(p.category); });
     var all = [{ key: 'all', label: 'Все' }].concat(cats.map(function (c) { return { key: c, label: c }; }));
-    el('chips').innerHTML = all.map(function (c) {
+    box.innerHTML = all.map(function (c) {
       return '<button class="chip glass press" type="button" data-cat="' + esc(c.key) + '" aria-pressed="' +
         (c.key === activeCat ? 'true' : 'false') + '">' + esc(c.label) + '</button>';
     }).join('');
-    el('categories').hidden = cats.length === 0;
+    section.hidden = cats.length === 0;
   }
 
   function markChips() {
@@ -523,18 +534,20 @@
 
   function renderGrid() {
     var grid = el('grid');
+    if (!grid) return;
     var status = el('catalog-status');
-    el('catalog-title').textContent = activeCat === 'all' ? 'Все товары' : activeCat;
+    var title = el('catalog-title');
+    if (title) title.textContent = activeCat === 'all' ? 'Все товары' : activeCat;
     grid.setAttribute('aria-busy', 'false');
     if (loadFailed) {
-      status.textContent = '';
+      if (status) status.textContent = '';
       grid.innerHTML = '<li class="empty">Не удалось загрузить товары. Обновите страницу, пожалуйста.</li>';
       return;
     }
     var list = products.filter(function (p) {
       return activeCat === 'all' || p.category === activeCat;
     });
-    status.textContent = 'Товаров: ' + list.length;
+    if (status) status.textContent = 'Товаров: ' + list.length;
     grid.innerHTML = '';
     if (!list.length) {
       grid.innerHTML = '<li class="empty">Ничего не найдено. Попробуйте другой запрос или категорию.</li>';
@@ -545,7 +558,8 @@
   }
 
   function scrollToCatalog() {
-    el('catalog').scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+    var target = el('catalog');
+    if (target) target.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
   }
 
   function pickCategory(key) {
@@ -555,13 +569,14 @@
     scrollToCatalog();
   }
 
+  // Каждый блок страницы рисуется, только если он есть (главная и каталог — разные страницы)
   function renderAll() {
     renderHero();
     renderChips();
     renderRows();
     renderGrid();
-    renderBadge();
-    renderCart();
+    if (el('cart-count')) renderBadge();
+    if (el('cart-list')) renderCart();
   }
 
   /* ----- Данные и события ----- */
@@ -612,11 +627,11 @@
   }
 
   function initShop() {
-    bindDialog(el('product-dialog'));
+    if (el('product-dialog')) bindDialog(el('product-dialog'));
     bindDialog(el('cart-dialog'));
     document.addEventListener('click', onShopClick);
     el('cart-open').addEventListener('click', function (e) { openCart(e.currentTarget); });
-    el('p-add').addEventListener('click', function () { if (addToCart(currentId)) refreshAddButton(); });
+    if (el('p-add')) el('p-add').addEventListener('click', function () { if (addToCart(currentId)) refreshAddButton(); });
     el('checkout-btn').addEventListener('click', function () {
       showView('checkout');
       el('f-name').focus();
@@ -675,7 +690,7 @@
     loadFailed = false;
     ['product-dialog', 'cart-dialog'].forEach(function (id) {
       var d = el(id);
-      if (d.open) d.close();
+      if (d && d.open) d.close();
     });
     renderAll();
   }
