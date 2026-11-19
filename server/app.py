@@ -104,6 +104,7 @@ STATIC_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".webp": "image/webp",
+    ".mp3": "audio/mpeg",
     ".woff2": "font/woff2",
     ".ico": "image/x-icon",
 }

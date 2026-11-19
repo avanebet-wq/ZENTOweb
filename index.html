@@ -6,6 +6,7 @@
   <title>ZENTO — Магазин</title>
   <meta name="description" content="ZENTO — интернет-магазин: выбирайте товары, добавляйте их в корзину и оформляйте заказ.">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="capsule.css">
   <link rel="stylesheet" href="captcha.css">
   <script src="boot.js"></script>
   <script src="app.js" defer></script>
@@ -172,6 +173,18 @@
       </div>
     </header>
 
+    <!-- Капелька входа: не внутри шапки (там свой блюр), а под ней. Показывает capsule.js после входа -->
+    <div class="capsule" id="capsule" aria-hidden="true">
+      <div class="capsule-card">
+        <span class="capsule-avatar" id="capsule-initials"></span>
+        <span class="capsule-text">
+          <span class="capsule-title">Успешный вход</span>
+          <span class="capsule-nick" id="capsule-nick"></span>
+        </span>
+        <svg class="capsule-check" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </div>
+    </div>
+
     <main id="top">
       <section id="today" class="hero" aria-label="Выбор ZENTO" hidden>
         <div class="container">
@@ -329,7 +342,10 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <!-- Одна живая область для капельки входа: всегда в DOM, пустая до входа -->
+  <p class="visually-hidden" id="capsule-live" role="status"></p>
   <script src="captcha.js" defer></script>
   <script src="auth.js" defer></script>
+  <script src="capsule.js" defer></script>
 </body>
 </html>
