@@ -301,8 +301,10 @@
   /* ---------- Экран входа и сайт ---------- */
   // Сообщаем магазину (app.js), вошли ли: 'in' — показать товары, 'out' — убрать их
   function emitSession(state) {
+    var detail = { state: state, user: state === 'in' ? user : null };
+    window.zentoSession = detail; // чтобы капелька, загрузившись позже, тоже узнала о входе
     try {
-      document.dispatchEvent(new CustomEvent('zento:session', { detail: { state: state } }));
+      document.dispatchEvent(new CustomEvent('zento:session', { detail: detail }));
     } catch (e) { /* старые браузеры: магазин останется пустым */ }
   }
 

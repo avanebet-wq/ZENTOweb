@@ -149,3 +149,8 @@
   .capsule.is-on.has-angle .capsule-card::before { animation: none; }
   .capsule.is-on.is-leaving .capsule-card { animation: none; opacity: 0; }
 }
+
+/* Фото вместо инициалов: круг обрезает картинку, инициалы остаются под ней, если фото нет */
+.capsule-avatar { position: relative; overflow: hidden; }
+.capsule-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.capsule-photo[hidden] { display: none; }
