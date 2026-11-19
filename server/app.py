@@ -17,10 +17,12 @@ import os
 import re
 import sqlite3
 import sys
+import tempfile
 import threading
 import time
 import traceback
 from collections import deque
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -51,6 +53,8 @@ EVENT_RATE_WINDOW = 60
 ADMIN_FAIL_LIMIT = 10              # неверных входов в админку с одного IP
 ADMIN_FAIL_WINDOW = 15 * 60        # за столько секунд; потом блокировка 429
 MIN_ADMIN_TOKEN_LENGTH = 32
+# Токен бота (SHOP_BOT_TOKEN): не имеет прав админа. Может только то же, что и обычный посетитель сайта.
+MIN_BOT_TOKEN_LENGTH = 32
 
 # Лимиты входа, регистрации и капчи: (сколько попаданий, за сколько секунд). Можно переопределить в тестах.
 DEFAULT_AUTH_LIMITS = {
@@ -113,6 +117,15 @@ TRUST_PROXY = os.environ.get("TRUST_PROXY", "").strip() == "1"
 
 def _client_ip(self):
     return pick_client_ip(self.headers.get("X-Real-IP"), self.client_address[0], TRUST_PROXY)
+
+
+class FileResponse:
+    """Ответ-файл (например копия базы). Отдаётся как скачивание, не как JSON."""
+
+    def __init__(self, data, filename, content_type="application/octet-stream"):
+        self.data = data
+        self.filename = filename
+        self.content_type = content_type
 
 
 class ApiError(Exception):
@@ -380,6 +393,36 @@ def _admin_product_patch(handler, params, query):
     return 200, _run(handler, store.update_product, product_id, payload)
 
 
+def make_backup(db_path) -> bytes:
+    """Делает копию базы через встроенный механизм SQLite (безопасно, даже когда идут заказы).
+    Проверяет копию командой PRAGMA integrity_check. Если проверка не 'ok' — ошибка, копию не отдаём."""
+    with tempfile.TemporaryDirectory(prefix="zento-backup-") as tmp:
+        target = Path(tmp) / "backup.db"
+        source = sqlite3.connect(str(db_path), timeout=10)
+        try:
+            copy = sqlite3.connect(str(target))
+            try:
+                source.backup(copy)
+            finally:
+                copy.close()
+        finally:
+            source.close()
+        check = sqlite3.connect(str(target))
+        try:
+            result = check.execute("PRAGMA integrity_check").fetchone()[0]
+        finally:
+            check.close()
+        if result != "ok":
+            raise RuntimeError("backup integrity check failed")
+        return target.read_bytes()
+
+
+def _admin_backup(handler, params, query):
+    data = make_backup(handler.server.db_path)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return 200, FileResponse(data, f"zento-backup-{stamp}.db")
+
+
 # ---------------------------------------------------------------- вход, регистрация, капча
 
 def _auth_error(code, fields=None, message=None, headers=()):
@@ -572,6 +615,7 @@ ROUTES = [
     ("GET", re.compile(r"^/api/admin/products$"), _admin_products),
     ("POST", re.compile(r"^/api/admin/products$"), _admin_product_create),
     ("PATCH", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_patch),
+    ("GET", re.compile(r"^/api/admin/backup$"), _admin_backup),
 ]
 
 
@@ -607,7 +651,11 @@ class Handler(BaseHTTPRequestHandler):
             self._prefetch_body()
             if path == "/api" or path.startswith("/api/"):
                 status, body, *extra = self._route_api(method, path, query)
-                self._send_json(status, body, extra[0] if extra else ())
+                headers = extra[0] if extra else ()
+                if isinstance(body, FileResponse):
+                    self._send_file(status, body, headers)
+                else:
+                    self._send_json(status, body, headers)
             elif method == "GET":
                 self._send_static(path)
             else:
@@ -634,12 +682,13 @@ class Handler(BaseHTTPRequestHandler):
             ip = _client_ip(self)
             if self.server.limiter.is_over("admin", ip, ADMIN_FAIL_LIMIT, ADMIN_FAIL_WINDOW):
                 raise ApiError(429, {"error": "too many requests"})
-            if not self._is_admin():
-                # Токен бота — не попытка взлома: отказываем 403 и не считаем в лимит.
-                if self._is_bot():
-                    raise ApiError(403, {"error": "forbidden"})
+            role = self._role()
+            if role is None:
                 self.server.limiter.record("admin", ip, ADMIN_FAIL_WINDOW)
                 raise ApiError(401, {"error": "unauthorized"})
+            if role != "admin":
+                # Токен бота правильный, но админке он не нужен: отказ, а не ошибка входа и не попытка взлома.
+                raise ApiError(403, {"error": "forbidden"})
         path_matched = False
         for route_method, pattern, func in ROUTES:
             match = pattern.match(path)
@@ -658,22 +707,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.limiter.try_hit(bucket, _client_ip(self), limit, window):
             raise ApiError(429, {"error": "too many requests"})
 
-    def _bearer(self):
-        """Значение Bearer-токена из заголовка Authorization в виде байтов или None."""
+    def _role(self):
+        """Кто пришёл по токену: 'admin', 'bot' или None (токен неверный или его нет)."""
         scheme, _, token = self.headers.get("Authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
             return None
-        return token.strip().encode("utf-8")
-
-    def _is_admin(self):
-        token = self._bearer()
-        return token is not None and hmac.compare_digest(token, self.server.admin_token.encode("utf-8"))
-
-    def _is_bot(self):
-        token = self._bearer()
-        if token is None or not self.server.bot_token:
-            return False
-        return hmac.compare_digest(token, self.server.bot_token.encode("utf-8"))
+        given = token.strip().encode("utf-8")
+        if hmac.compare_digest(given, self.server.admin_token.encode("utf-8")):
+            return "admin"
+        if self.server.bot_token and hmac.compare_digest(given, self.server.bot_token.encode("utf-8")):
+            return "bot"
+        return None
 
     def _prefetch_body(self):
         """Читает тело запроса один раз. Слишком большое тело не сохраняем."""
@@ -736,6 +780,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def _send_file(self, status, file, headers=()):
+        self.send_response(status)
+        self._security_headers()
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Type", file.content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{file.filename}"')
+        self.send_header("Content-Length", str(len(file.data)))
+        for name, value in headers:
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(file.data)
 
     def _send_static(self, path):
         found = resolve_static(self.server.static_root, path)
@@ -801,6 +857,12 @@ def create_server(host, port, *, db_path=DEFAULT_DB, products_path=DEFAULT_PRODU
         raise ValueError(
             f"ADMIN_TOKEN слишком короткий: нужно не меньше {MIN_ADMIN_TOKEN_LENGTH} символов"
         )
+    if bot_token and len(bot_token) < MIN_BOT_TOKEN_LENGTH:
+        raise ValueError(
+            f"SHOP_BOT_TOKEN слишком короткий: нужно не меньше {MIN_BOT_TOKEN_LENGTH} символов"
+        )
+    if bot_token and bot_token == admin_token:
+        raise ValueError("SHOP_BOT_TOKEN не должен совпадать с ADMIN_TOKEN")
     if cookie_secure is None:
         cookie_secure = os.environ.get("COOKIE_SECURE", "1").strip() != "0"
     store.init_db(db_path, products_path)
