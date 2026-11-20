@@ -282,6 +282,18 @@ class OrdersTest(ServerTestCase):
         resp = self.admin("GET", "/api/admin/customers")
         self.assertEqual(resp.body[0]["orders_count"], 2)
 
+    def test_repeat_order_without_email_keeps_saved_email(self):
+        self.create_order([{"product_id": "p1", "qty": 1}])
+        no_email = dict(CUSTOMER, email="")
+        resp = self.create_order([{"product_id": "p1", "qty": 1}], customer=no_email)
+        self.assertEqual(resp.status, 201)
+        customers = self.admin("GET", "/api/admin/customers").body
+        self.assertEqual(customers[0]["email"], CUSTOMER["email"])
+
+    def test_whitespace_email_is_treated_as_empty(self):
+        resp = self.create_order([{"product_id": "p1", "qty": 1}], customer=dict(CUSTOMER, email="   "))
+        self.assertEqual(resp.status, 201)
+
     def test_repeat_order_updates_customer_but_keeps_order_address(self):
         first = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
         new_data = dict(CUSTOMER, name="Анна Смирнова", email="new@example.com",

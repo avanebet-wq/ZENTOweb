@@ -526,7 +526,7 @@ def clean_customer(data) -> dict:
     checks = {
         "name": lambda v: _text(v, 2, 100),
         "phone": normalize_phone,
-        "email": _email,
+        "email": lambda v: _email(v) if v is not None and str(v).strip() != "" else "",
         "address": lambda v: _text(v, 5, 300),
     }
     errors, out = {}, {}
@@ -704,7 +704,7 @@ def create_order(conn, payload) -> dict:
             # Клиент уже есть: обновляем его данные последними значениями.
             customer_id = found["id"]
             conn.execute(
-                "UPDATE customers SET name = ?, email = ?, address = ? WHERE id = ?",
+                "UPDATE customers SET name = ?, email = COALESCE(NULLIF(?, ''), email), address = ? WHERE id = ?",
                 (customer["name"], customer["email"], customer["address"], customer_id),
             )
         else:

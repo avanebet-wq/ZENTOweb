@@ -313,7 +313,7 @@
   }
 
   /* ----- Оформление заказа ----- */
-  var FIELDS = ['name', 'phone', 'email', 'address'];
+  var FIELDS = ['name', 'phone', 'city', 'postomat'];
   var RULES = {
     name: function (v) { return v.length >= 2 ? '' : 'Укажите имя: минимум 2 символа'; },
     phone: function (v) {
@@ -321,8 +321,8 @@
       return (/^\+?[\d\s()\-]+$/.test(v) && digits.length >= 10 && digits.length <= 15)
         ? '' : 'Укажите украинский телефон, например +380\u00A067\u00A0123\u201145\u201167';
     },
-    email: function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? '' : 'Укажите почту, например name@ukr.net'; },
-    address: function (v) { return v.length >= 5 ? '' : 'Укажите адрес доставки: город, улицу и дом'; }
+    city: function (v) { return v.length >= 2 && v.length <= 200 ? '' : 'Укажите город, не больше 200 символов'; },
+    postomat: function (v) { return /^\d{1,6}$/.test(v) ? '' : 'Укажите номер поштомата цифрами, например 12345'; }
   };
 
   function setFieldError(name, msg) {
@@ -359,6 +359,10 @@
     clearFormErrors();
     var customer = {};
     FIELDS.forEach(function (n) { customer[n] = el('f-' + n).value.trim(); });
+    customer.address = 'Новая почта, поштомат № ' + customer.postomat + ', ' + customer.city;
+    customer.email = '';
+    delete customer.city;
+    delete customer.postomat;
 
     var firstBad = null;
     FIELDS.forEach(function (n) {
@@ -401,6 +405,7 @@
     var mapped = false;
     function mark(key) {
       var name = String(key).replace(/^customer\./, '');
+      if (name === 'address') name = 'city';
       if (setFieldError(name, 'Проверьте это поле')) mapped = true;
     }
     if (Array.isArray(fields)) fields.forEach(mark);
