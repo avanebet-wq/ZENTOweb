@@ -233,7 +233,7 @@ class ProfileServerBase(test_api.ServerTestCase):
 class ImageUploadTest(ProfileServerBase):
     def setUp(self):
         super().setUp()
-        self.user_id = self.make_user("Anna_Petrova", email="anna@example.com")
+        self.user_id = self.make_user("AnnaPetrova", email="anna@example.com")
         self.cookie = self.session_for(self.user_id)
 
     def test_avatar_png_is_saved_in_database(self):
@@ -244,17 +244,17 @@ class ImageUploadTest(ProfileServerBase):
         self.assertTrue(resp.body["user"]["has_avatar"])
         self.assertFalse(resp.body["user"]["has_banner"])
         self.assertEqual(len(resp.body["user"]["avatar_v"]), 16)
-        content_type, stored, width, height, sha = self.image_row("anna_petrova", "avatar")
+        content_type, stored, width, height, sha = self.image_row("annapetrova", "avatar")
         self.assertEqual((content_type, bytes(stored), width, height), ("image/png", data, 300, 200))
         self.assertEqual(sha, hashlib.sha256(data).hexdigest())
 
     def test_banner_jpeg_and_webp_are_accepted(self):
         jpeg = self.upload("banner", jpeg_bytes(1200, 400), "image/jpeg", self.cookie)
         self.assertEqual(jpeg.status, 200, jpeg.body)
-        self.assertEqual(self.image_row("anna_petrova", "banner")[0], "image/jpeg")
+        self.assertEqual(self.image_row("annapetrova", "banner")[0], "image/jpeg")
         webp = self.upload("banner", webp_vp8l(800, 300), "image/webp", self.cookie)
         self.assertEqual(webp.status, 200, webp.body)
-        self.assertEqual(self.image_row("anna_petrova", "banner")[0], "image/webp")
+        self.assertEqual(self.image_row("annapetrova", "banner")[0], "image/webp")
         self.assertEqual(self.image_count(), 1)
 
     def test_gif_svg_and_missing_type_get_415(self):
@@ -313,7 +313,7 @@ class ImageUploadTest(ProfileServerBase):
         second = self.upload("avatar", jpeg_bytes(12, 12), "image/jpeg", self.cookie).body["user"]["avatar_v"]
         self.assertNotEqual(first, second)
         self.assertEqual(self.image_count(), 1)
-        self.assertEqual(self.image_row("anna_petrova", "avatar")[0], "image/jpeg")
+        self.assertEqual(self.image_row("annapetrova", "avatar")[0], "image/jpeg")
 
     def test_delete_removes_image_and_is_repeatable(self):
         self.upload("avatar", png_bytes(10, 10), "image/png", self.cookie)
@@ -324,7 +324,7 @@ class ImageUploadTest(ProfileServerBase):
         again = self.request("DELETE", "/api/profile/avatar", headers=self.cookie)
         self.assertEqual(again.status, 200, again.body)
         self.assertEqual(self.image_count(), 0)
-        self.assertEqual(self.request("GET", "/api/users/anna_petrova/avatar", headers=self.cookie).status, 404)
+        self.assertEqual(self.request("GET", "/api/users/annapetrova/avatar", headers=self.cookie).status, 404)
 
     def test_upload_without_session_is_refused_before_body_is_read(self):
         # Шлём только заголовки с большой длиной и ни байта тела. Сервер, читающий тело первым,
@@ -372,13 +372,13 @@ class ImageUploadTest(ProfileServerBase):
 class ImageServeTest(ProfileServerBase):
     def setUp(self):
         super().setUp()
-        self.user_id = self.make_user("Anna_Petrova")
+        self.user_id = self.make_user("AnnaPetrova")
         self.cookie = self.session_for(self.user_id)
         self.data = png_bytes(64, 48)
         self.upload("avatar", self.data, "image/png", self.cookie)
 
     def test_avatar_is_served_with_type_etag_and_private_cache(self):
-        resp = self.request("GET", "/api/users/ANNA_petrova/avatar", headers=self.cookie)
+        resp = self.request("GET", "/api/users/ANNApetrova/avatar", headers=self.cookie)
         self.assertEqual(resp.status, 200)
         self.assertEqual(resp.raw, self.data)
         self.assertEqual(resp.headers["Content-Type"], "image/png")
@@ -387,26 +387,26 @@ class ImageServeTest(ProfileServerBase):
         self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
 
     def test_matching_etag_gets_304_without_body(self):
-        etag = self.request("GET", "/api/users/anna_petrova/avatar", headers=self.cookie).headers["ETag"]
-        resp = self.request("GET", "/api/users/anna_petrova/avatar",
+        etag = self.request("GET", "/api/users/annapetrova/avatar", headers=self.cookie).headers["ETag"]
+        resp = self.request("GET", "/api/users/annapetrova/avatar",
                             headers={**self.cookie, "If-None-Match": etag})
         self.assertEqual(resp.status, 304)
         self.assertEqual(resp.raw, b"")
         self.assertEqual(resp.headers["Cache-Control"], "private, max-age=3600")
 
     def test_missing_image_or_user_is_404_for_logged_in(self):
-        self.assertEqual(self.request("GET", "/api/users/anna_petrova/banner", headers=self.cookie).status, 404)
-        self.assertEqual(self.request("GET", "/api/users/nobody_here/avatar", headers=self.cookie).status, 404)
+        self.assertEqual(self.request("GET", "/api/users/annapetrova/banner", headers=self.cookie).status, 404)
+        self.assertEqual(self.request("GET", "/api/users/nobodyhere/avatar", headers=self.cookie).status, 404)
 
     def test_guest_bot_and_admin_get_401(self):
         for headers in ({}, {"Authorization": f"Bearer {SHOP_BOT}"}, {"Authorization": f"Bearer {TOKEN}"}):
             for kind in ("avatar", "banner"):
-                resp = self.request("GET", f"/api/users/anna_petrova/{kind}", headers=headers)
+                resp = self.request("GET", f"/api/users/annapetrova/{kind}", headers=headers)
                 self.assert_error(resp, 401, "login_required")
                 self.assertNotEqual(resp.headers.get("Content-Type"), "image/png")
 
     def test_other_api_answers_stay_no_store(self):
-        resp = self.request("GET", "/api/users/anna_petrova/profile", headers=self.cookie)
+        resp = self.request("GET", "/api/users/annapetrova/profile", headers=self.cookie)
         self.assertEqual(resp.headers["Cache-Control"], "no-store")
 
     def test_backup_copy_contains_the_image(self):
@@ -420,7 +420,7 @@ class ImageServeTest(ProfileServerBase):
         try:
             row = conn.execute(
                 "SELECT i.content_type, i.data, i.sha256 FROM user_images i"
-                " JOIN users u ON u.id = i.user_id WHERE u.nick_lower = 'anna_petrova' AND i.kind = 'avatar'"
+                " JOIN users u ON u.id = i.user_id WHERE u.nick_lower = 'annapetrova' AND i.kind = 'avatar'"
             ).fetchone()
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
         finally:

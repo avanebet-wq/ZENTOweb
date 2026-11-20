@@ -26,7 +26,7 @@ class RankTableTest(unittest.TestCase):
         self.assertEqual(ranks.rank_for(30)["level"], 2)
         self.assertEqual(ranks.rank_for(ranks.threshold(15))["level"], 15)
         top = ranks.rank_for(10 ** 9)
-        self.assertEqual((top["level"], top["name"], top["next_at"]), (15, "Бессмертный", None))
+        self.assertEqual((top["level"], top["name"], top["next_at"]), (15, "Босс боссов", None))
 
     def test_negative_xp_is_level_one(self):
         self.assertEqual(ranks.rank_for(-5)["xp"], 0)

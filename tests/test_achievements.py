@@ -293,33 +293,33 @@ class AchievementServerBase(ProfileServerBase):
 
 class RegistrationAchievementTest(AchievementServerBase):
     def test_registration_gives_public_id_and_first_login(self):
-        cookie = self.register_cookie("Anna_K", email="anna@example.com")
+        cookie = self.register_cookie("AnnaK", email="anna@example.com")
         user = self.me(cookie)
         self.assertRegex(user["public_id"], PUBLIC_ID_RE)
         self.assertEqual(user["created_at"], sql(self.db_path, "SELECT created_at FROM users")[0][0])
         first_login = self.entries(cookie)["first_login"]
         self.assertIs(first_login["earned"], True)
         self.assertEqual(first_login["granted_at"], user["created_at"])
-        self.assertEqual(len(self.grant_rows(self.user_id("Anna_K"), "first_login")), 1)
+        self.assertEqual(len(self.grant_rows(self.user_id("AnnaK"), "first_login")), 1)
 
     def test_public_ids_of_several_users_are_unique(self):
         ids = []
-        for nick in ("user_one", "user_two", "user_three"):
+        for nick in ("userone", "usertwo", "userthree"):
             ids.append(self.me(self.register_cookie(nick))["public_id"])
         for public_id in ids:
             self.assertRegex(public_id, PUBLIC_ID_RE)
         self.assertEqual(len(set(ids)), 3)
 
     def test_public_profile_never_shows_public_id(self):
-        cookie = self.register_cookie("Anna_K")
-        resp = self.request("GET", "/api/users/anna_k/profile", headers=cookie)
+        cookie = self.register_cookie("AnnaK")
+        resp = self.request("GET", "/api/users/annak/profile", headers=cookie)
         self.assertEqual(resp.status, 200, resp.body)
         self.assertNotIn("public_id", resp.body["user"])
         self.assertNotIn("achievements", resp.body["user"])
         self.assertNotIn(self.me(cookie)["public_id"], json.dumps(resp.body))
 
     def test_profile_me_lists_all_achievements_in_catalog_order(self):
-        cookie = self.register_cookie("Anna_K", email="anna@example.com")
+        cookie = self.register_cookie("AnnaK", email="anna@example.com")
         achievements_list = self.me(cookie)["achievements"]
         self.assertEqual([entry["code"] for entry in achievements_list], CATALOG_CODES)
         for entry in achievements_list:
@@ -339,8 +339,8 @@ class RegistrationAchievementTest(AchievementServerBase):
 class ProfileAchievementTest(AchievementServerBase):
     def setUp(self):
         super().setUp()
-        self.cookie = self.register_cookie("Anna_K")
-        self.anna = self.user_id("Anna_K")
+        self.cookie = self.register_cookie("AnnaK")
+        self.anna = self.user_id("AnnaK")
 
     def test_first_avatar_upload_gives_profile_photo_once(self):
         resp = self.upload("avatar", png_bytes(300, 300), "image/png", self.cookie)
@@ -378,9 +378,9 @@ class ProfileAchievementTest(AchievementServerBase):
 class AdminGrantTest(AchievementServerBase):
     def setUp(self):
         super().setUp()
-        self.cookie = self.register_cookie("Anna_K", email="anna@example.com")
-        self.register_cookie("Oleg_B")
-        self.anna = self.user_id("Anna_K")
+        self.cookie = self.register_cookie("AnnaK", email="anna@example.com")
+        self.register_cookie("OlegB")
+        self.anna = self.user_id("AnnaK")
 
     def test_grant_by_email_is_reported_then_repeat_is_not_duplicated(self):
         body = {"login": "Anna@Example.com", "code": "first_purchase"}
@@ -388,7 +388,7 @@ class AdminGrantTest(AchievementServerBase):
         self.assertEqual(resp.status, 200, resp.body)
         public_id = sql(self.db_path, "SELECT public_id FROM users WHERE id = ?", (self.anna,))[0][0]
         self.assertEqual(resp.body, {"ok": True, "granted": True,
-                                     "user": {"nick": "Anna_K", "public_id": public_id}})
+                                     "user": {"nick": "AnnaK", "public_id": public_id}})
         self.assertIs(self.entries(self.cookie)["first_purchase"]["earned"], True)
 
         again = self.admin_grant(body)
@@ -397,14 +397,14 @@ class AdminGrantTest(AchievementServerBase):
         self.assertEqual(len(self.grant_rows(self.anna, "first_purchase")), 1)
 
     def test_grant_by_nick_in_any_case(self):
-        resp = self.admin_grant({"login": "OLEG_b", "code": "first_purchase"})
+        resp = self.admin_grant({"login": "OLEGb", "code": "first_purchase"})
         self.assertEqual(resp.status, 200, resp.body)
         self.assertIs(resp.body["granted"], True)
-        self.assertEqual(resp.body["user"]["nick"], "Oleg_B")
-        self.assertEqual(len(self.grant_rows(self.user_id("Oleg_B"), "first_purchase")), 1)
+        self.assertEqual(resp.body["user"]["nick"], "OlegB")
+        self.assertEqual(len(self.grant_rows(self.user_id("OlegB"), "first_purchase")), 1)
 
     def test_unknown_login_is_404_not_found(self):
-        for login in ("nobody_here", "nobody@example.com"):
+        for login in ("nobodyhere", "nobody@example.com"):
             with self.subTest(login=login):
                 resp = self.admin_grant({"login": login, "code": "first_purchase"})
                 self.assertEqual(resp.status, 404, resp.body)

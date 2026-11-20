@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  var NICK_RE = /^[A-Za-zА-Яа-яЁёІіЇїЄєҐґ0-9_]+$/;
+  var NICK_RE = /^[A-Za-z0-9]+$/;
   var BIO_MAX = 300;
   var SOURCE_MAX = 15 * 1024 * 1024;
   var NOT_SUPPORTED = 'Этот формат не поддерживается. Сохраните фото как JPEG или сделайте скриншот';
@@ -66,11 +66,8 @@
     toast: $('toast'),
     settings: $('pf-settings'),
     bannerErr: $('pf-banner-err'),
-    actPhoto: $('pf-act-photo'),
-    actPhotoText: $('pf-act-photo-text'),
-    actNick: $('pf-act-nick'),
-    actSettings: $('pf-act-settings'),
-    nickBlock: $('pf-nick-block'),
+    gear: $('pf-gear'),
+    avatarGroup: $('pf-avatar-group'),
     name: $('pf-name'),
     id: $('pf-id'),
     at: $('pf-at'),
@@ -282,7 +279,7 @@
     el.nick.disabled = cool;
     el.nickHint.textContent = cool
       ? 'Ник можно менять раз в 30 дней, следующий раз — ' + ddmm(st.base.next)
-      : 'От 3 до 20 символов: буквы, цифры и знак _. Ник можно менять раз в 30 дней.';
+      : 'От 3 до 20 символов: только английские буквы и цифры. Ник можно менять раз в 30 дней.';
   }
 
   function placeholder(box, kind) {
@@ -351,6 +348,7 @@
       del.hidden = !st.base['has_' + kind];
       del.textContent = 'Удалить ' + noun;
     }
+    if (kind === 'avatar' && el.avatarGroup) el.avatarGroup.hidden = del.hidden;
   }
 
   function renderFoot() {
@@ -369,9 +367,7 @@
     el.banner.disabled = st.busy;
     el.avatarDel.disabled = st.busy;
     el.bannerDel.disabled = st.busy;
-    el.actPhoto.disabled = st.busy;
-    el.actNick.disabled = st.busy;
-    el.actSettings.disabled = st.busy;
+    el.gear.disabled = st.busy;
     dlg.setAttribute('aria-busy', st.busy ? 'true' : 'false');
   }
 
@@ -381,25 +377,50 @@
     renderPhoto('avatar');
     renderPhoto('banner');
     renderInfo();
-    renderActions();
     renderFoot();
   }
 
-  // Имя крупно, ID, @ник и дата регистрации
+  function plural(n, one, few, many) {
+    var a = n % 100, b = n % 10;
+    if (a > 10 && a < 20) return many;
+    if (b === 1) return one;
+    if (b >= 2 && b <= 4) return few;
+    return many;
+  }
+
+  // Сколько времени с регистрации: «3 дня», «2 месяца 5 дней», «1 год 3 месяца»
+  function sinceText(iso) {
+    var s = new Date(iso);
+    if (!iso || isNaN(s.getTime())) return '—';
+    var n = new Date();
+    var y = n.getFullYear() - s.getFullYear();
+    var m = n.getMonth() - s.getMonth();
+    var d = n.getDate() - s.getDate();
+    if (d < 0) { m -= 1; d += new Date(n.getFullYear(), n.getMonth(), 0).getDate(); }
+    if (m < 0) { y -= 1; m += 12; }
+    if (y < 0) return '—';
+    var parts = [];
+    if (y > 0) {
+      parts.push(y + ' ' + plural(y, 'год', 'года', 'лет'));
+      if (m > 0) parts.push(m + ' ' + plural(m, 'месяц', 'месяца', 'месяцев'));
+    } else if (m > 0) {
+      parts.push(m + ' ' + plural(m, 'месяц', 'месяца', 'месяцев'));
+      if (d > 0) parts.push(d + ' ' + plural(d, 'день', 'дня', 'дней'));
+    } else if (d > 0) {
+      parts.push(d + ' ' + plural(d, 'день', 'дня', 'дней'));
+    } else {
+      return 'меньше суток';
+    }
+    return parts.join(' ');
+  }
+
+  // Имя крупно, ID, @ник и время с регистрации
   function renderInfo() {
     if (!st.base) return;
     el.name.textContent = st.base.nick;
     el.id.textContent = st.base.public_id || '—';
     el.at.textContent = st.base.nick || '—';
-    el.since.textContent = dateOf(st.base.created) || '—';
-  }
-
-  // Подпись кнопки фото: «Выбрать», а если фото уже есть — «Изменить»
-  function renderActions() {
-    if (!st.base) return;
-    var hasPhoto = st.photos.avatar.status === 'new' ||
-      (st.photos.avatar.status === 'keep' && st.base.has_avatar);
-    el.actPhotoText.textContent = hasPhoto ? 'Изменить фото' : 'Выбрать фото';
+    el.since.textContent = sinceText(st.base.created);
   }
 
   // Какой экран показываем: loading | edit | settings | crop | done
@@ -408,6 +429,7 @@
     el.loading.hidden = name !== 'loading';
     el.editor.hidden = name !== 'edit';
     el.settings.hidden = name !== 'settings';
+    el.gear.style.visibility = name === 'edit' ? '' : 'hidden';
     el.crop.hidden = name !== 'crop';
     el.done.hidden = name !== 'done';
     el.confirm.hidden = true;
@@ -469,7 +491,6 @@
     el.avatarView._key = null;
     el.bannerView._key = null;
     setPhotoErr('', 'banner');
-    el.nickBlock.hidden = true;
     el.name.textContent = '';
     el.id.textContent = '';
     el.at.textContent = '';
@@ -542,7 +563,7 @@
   // Из настроек назад к профилю; фокус на кнопку «Настройки»
   function backToProfile() {
     setView('edit');
-    el.actSettings.focus({ preventScroll: true });
+    el.gear.focus({ preventScroll: true });
   }
 
   /* ---------- Выбор и проверка фото ---------- */
@@ -701,7 +722,7 @@
       var v = nickValue();
       var n = len(v);
       if (n < 3 || n > 20 || !NICK_RE.test(v)) {
-        fieldErr(el.nickErr, el.nick, 'От 3 до 20 символов: буквы, цифры и знак _');
+        fieldErr(el.nickErr, el.nick, 'От 3 до 20 символов: только английские буквы и цифры');
         first = el.nick;
         ok = false;
       } else {
@@ -806,17 +827,6 @@
   }
 
   /* ---------- Настройки, ник, достижения ---------- */
-  // Блок ника открываем кнопкой «Изменить ник»; фокус на поле — по нажатию пользователя
-  function openNick() {
-    if (st.busy || st.view !== 'edit') return;
-    el.nickBlock.hidden = false;
-    if (el.nick.disabled) {
-      el.nickBlock.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
-      return;
-    }
-    el.nick.focus();
-  }
-
   function openSettings() {
     if (st.busy || st.view !== 'edit') return;
     setView('settings');
@@ -991,9 +1001,7 @@
   el.avatar.addEventListener('click', function () { pickPhoto('avatar'); });
   el.banner.addEventListener('click', function () { pickPhoto('banner'); });
   // На странице каталога нет части разметки (кнопки-действия, достижения, файл): проверяем, что элемент есть
-  if (el.actPhoto) el.actPhoto.addEventListener('click', function () { pickPhoto('avatar'); });
-  if (el.actNick) el.actNick.addEventListener('click', openNick);
-  if (el.actSettings) el.actSettings.addEventListener('click', openSettings);
+  el.gear.addEventListener('click', openSettings);
   if (el.achGrid) el.achGrid.addEventListener('click', onMedalClick);
   if (el.tipClose) el.tipClose.addEventListener('click', function () { closeTip(true); });
   if (el.file) el.file.addEventListener('change', function () {

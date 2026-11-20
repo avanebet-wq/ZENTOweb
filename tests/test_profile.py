@@ -124,7 +124,7 @@ class ProfileReadTest(ProfileTestBase):
             self.assertNotIn("user", resp.body)
 
     def test_public_profile_unknown_nick_is_404(self):
-        resp = self.request("GET", "/api/users/nobody_here/profile", headers=self.anna_cookie)
+        resp = self.request("GET", "/api/users/nobodyhere/profile", headers=self.anna_cookie)
         self.assertEqual(resp.status, 404)
 
     def test_public_profile_flags_follow_uploads(self):
@@ -195,41 +195,41 @@ class NickChangeTest(ProfileTestBase):
         self.assertIsNone(self.row(self.anna)[3])
 
     def test_first_change_is_free_second_waits_30_days(self):
-        first = self.patch({"nick": "Anna_One"})
+        first = self.patch({"nick": "AnnaOne"})
         self.assertEqual(first.status, 200, first.body)
-        self.assertEqual(first.body["user"]["nick"], "Anna_One")
+        self.assertEqual(first.body["user"]["nick"], "AnnaOne")
         next_at = first.body["user"]["nick_next_change_at"]
         self.assertRegex(next_at, r"^\d{4}-\d{2}-\d{2}T.*Z$")
 
-        second = self.patch({"nick": "Anna_Two"})
+        second = self.patch({"nick": "AnnaTwo"})
         self.assertEqual(second.status, 409, second.body)
         self.assertEqual(second.body["error"], "nick_cooldown")
         self.assertRegex(second.body["fields"]["nick"], r"\d{2}\.\d{2}\.\d{4}")
-        self.assertEqual(self.row(self.anna)[0], "Anna_One")
+        self.assertEqual(self.row(self.anna)[0], "AnnaOne")
 
     def test_change_allowed_after_30_days(self):
-        self.assertEqual(self.patch({"nick": "Anna_One"}).status, 200)
+        self.assertEqual(self.patch({"nick": "AnnaOne"}).status, 200)
         self.set_db("UPDATE users SET nick_changed_at = ? WHERE id = ?",
                     (store.to_iso(store.utc_now() - timedelta(days=31)), self.anna))
-        resp = self.patch({"nick": "Anna_Two"})
+        resp = self.patch({"nick": "AnnaTwo"})
         self.assertEqual(resp.status, 200, resp.body)
-        self.assertEqual(resp.body["user"]["nick"], "Anna_Two")
+        self.assertEqual(resp.body["user"]["nick"], "AnnaTwo")
 
     def test_nick_changed_at_is_set_on_real_change(self):
-        self.patch({"nick": "Anna_One"})
+        self.patch({"nick": "AnnaOne"})
         changed = self.row(self.anna)[3]
         self.assertIsNotNone(changed)
         self.assertTrue(changed.endswith("Z"))
 
     def test_cooldown_blocks_bio_too(self):
-        self.patch({"nick": "Anna_One"})
-        resp = self.patch({"bio": "новое описание", "nick": "Anna_Two"})
+        self.patch({"nick": "AnnaOne"})
+        resp = self.patch({"bio": "новое описание", "nick": "AnnaTwo"})
         self.assertEqual(resp.status, 409)
         self.assertEqual(self.row(self.anna)[2], "Старое описание")
 
     def test_login_follows_the_new_nick(self):
-        self.patch({"nick": "Anna_One"})
-        ok = self.request("POST", "/api/auth/login", body={"login": "anna_one", "password": PASSWORD})
+        self.patch({"nick": "AnnaOne"})
+        ok = self.request("POST", "/api/auth/login", body={"login": "annaone", "password": PASSWORD})
         self.assertEqual(ok.status, 200, ok.body)
         old = self.request("POST", "/api/auth/login", body={"login": "anna", "password": PASSWORD})
         self.assertEqual(old.status, 401)
@@ -241,11 +241,12 @@ class NickChangeTest(ProfileTestBase):
             self.assertEqual(resp.body["error"], "nick_invalid", bad)
             self.assertEqual(list(resp.body["fields"]), ["nick"])
 
-    def test_mixed_latin_and_cyrillic_rejected(self):
-        resp = self.patch({"nick": "аnna"})          # первая буква — кириллическая «а»
-        self.assertEqual(resp.status, 400, resp.body)
-        self.assertEqual(resp.body["error"], "nick_invalid")
-        self.assertEqual(self.patch({"nick": "Анна_1"}).status, 200)
+    def test_only_english_letters_and_digits_allowed(self):
+        for bad in ("аnna", "Анна_1", "Anna_1", "Anna!", "Anna-2"):
+            resp = self.patch({"nick": bad})
+            self.assertEqual(resp.status, 400, resp.body)
+            self.assertEqual(resp.body["error"], "nick_invalid")
+        self.assertEqual(self.patch({"nick": "Anna77"}).status, 200)
 
     def test_reserved_words_rejected_in_any_case(self):
         for bad in ("admin", "Zento", "SUPPORT", "bot", "administrator", "root", "Moderator"):
@@ -269,7 +270,7 @@ class NickChangeTest(ProfileTestBase):
 class NickReservationTest(ProfileTestBase):
     def setUp(self):
         super().setUp()
-        self.patch({"nick": "Anna_One"})          # старый ник «Anna» теперь зарезервирован
+        self.patch({"nick": "AnnaOne"})          # старый ник «Anna» теперь зарезервирован
         self.olga = self.make_user("Olga")
         self.olga_cookie = self.session_for(self.olga)
 
@@ -288,7 +289,7 @@ class NickReservationTest(ProfileTestBase):
                     (store.to_iso(store.utc_now() - timedelta(minutes=1)),))
         resp = self.patch({"nick": "Anna"}, headers=self.olga_cookie)
         self.assertEqual(resp.status, 200, resp.body)
-        self.assertEqual(self.register("Anna_Free").status, 201)
+        self.assertEqual(self.register("AnnaFree").status, 201)
 
     def test_owner_can_take_back_own_old_nick_after_cooldown(self):
         self.set_db("UPDATE users SET nick_changed_at = ? WHERE id = ?",
