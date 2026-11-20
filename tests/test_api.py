@@ -880,7 +880,7 @@ class DbTest(unittest.TestCase):
 
     def test_old_database_gets_address_column(self):
         schema = store.SCHEMA_PATH.read_text(encoding="utf-8")
-        old_line = "    address     TEXT NOT NULL DEFAULT '',\n    tracking    TEXT NOT NULL DEFAULT '',\n    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created"
+        old_line = "    address     TEXT NOT NULL DEFAULT '',\n    tracking    TEXT NOT NULL DEFAULT '',\n    user_id     INTEGER REFERENCES users (id),\n    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created"
         self.assertIn(old_line, schema)
         old_schema = schema.replace(old_line, "    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created")
         tmp = Path(tempfile.mkdtemp(prefix="zento-old-"))

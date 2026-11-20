@@ -925,3 +925,16 @@ td .muted { font-size: 13px; }
 .btn-danger-text { color: #FF453A; }
 .check-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 17px; color: #fff; cursor: pointer; }
 .check-row input { width: 22px; height: 22px; accent-color: #0A84FF; }
+
+/* Мои заказы */
+.greet-orders { margin: 12px 0 0; display: flex; justify-content: center; }
+.order-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.order-card { padding: 14px; border-radius: 16px; background: rgba(255, 255, 255, .08); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25); }
+.order-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.order-status { font-size: 15px; font-weight: 600; color: #409CFF; }
+.order-status--done { color: #30D158; }
+.order-status--cancelled { color: #FF453A; }
+.order-date, .order-address, .order-track { margin: 4px 0 0; font-size: 15px; color: rgba(235, 235, 245, .68); }
+.order-items { list-style: none; margin: 8px 0 0; padding: 0; font-size: 17px; }
+.order-total { margin: 8px 0 0; font-weight: 600; }
+.order-track a { color: #409CFF; text-decoration: underline; }

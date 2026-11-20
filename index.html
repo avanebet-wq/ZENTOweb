@@ -200,6 +200,7 @@
             <span>Ваш статус:</span>
             <span class="rank-badge rank-badge--1" id="rank-badge"><span class="rank-badge__inner"><span class="rank-badge__num" id="rank-lvl"></span><span class="rank-badge__name" id="rank-name"></span><span class="rank-badge__icon" id="rank-icon" aria-hidden="true" hidden></span></span></span>
           </p>
+          <p class="greet-orders"><button class="btn btn-ghost press" type="button" id="orders-open">Мои заказы</button></p>
         </div>
       </section>
 
@@ -283,6 +284,22 @@
   </div>
 
   <!-- Корзина: выдвигается справа; внутри три экрана: корзина, оформление, спасибо -->
+  <dialog class="drawer" id="orders-dialog" aria-labelledby="orders-title">
+    <div class="drawer-body glass surface">
+      <span class="sheet-handle" aria-hidden="true"></span>
+      <div class="drawer-head">
+        <h2 id="orders-title" tabindex="-1">Мои заказы</h2>
+        <button class="icon-btn press" type="button" data-close aria-label="Закрыть заказы">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="drawer-scroll">
+        <p class="empty" id="orders-status" role="status">Загружаем заказы…</p>
+        <ul class="order-list" id="orders-list" hidden></ul>
+      </div>
+    </div>
+  </dialog>
+
   <dialog class="drawer" id="cart-dialog" aria-labelledby="cart-title">
     <div class="drawer-body glass surface">
       <span class="sheet-handle" aria-hidden="true"></span>

@@ -400,7 +400,20 @@ def _order_create(handler, params, query):
     if not handler.server.limiter.try_hit("orders_all", "all", ORDER_GLOBAL_LIMIT, ORDER_GLOBAL_WINDOW):
         raise ApiError(429, {"error": "too many requests"})
     payload = handler._read_json()
-    return 201, _run(handler, store.create_order, payload)
+    # Если заказ оформляет вошедший покупатель, привязываем заказ к его аккаунту
+    user_id = None
+    token = auth.read_session_token(handler.headers.get("Cookie"))
+    if token is not None:
+        user = _run_auth(handler, store.user_for_session, auth.token_hash(token), store.utc_now())
+        if user is not None:
+            user_id = user["id"]
+    return 201, _run(handler, store.create_order, payload, user_id)
+
+
+def _my_orders(handler, params, query):
+    """GET /api/my/orders: заказы вошедшего покупателя."""
+    user = _session_user(handler, "Войдите, чтобы посмотреть заказы")
+    return 200, _run(handler, store.list_user_orders, user["id"])
 
 
 def _event_create(handler, params, query):
@@ -870,6 +883,7 @@ ROUTES = [
     ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)$"), _product_get),
     ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)/image$"), _product_image_get),
     ("POST", re.compile(r"^/api/orders$"), _order_create),
+    ("GET", re.compile(r"^/api/my/orders$"), _my_orders),
     ("POST", re.compile(r"^/api/events$"), _event_create),
     ("GET", re.compile(r"^/api/admin/stats$"), _admin_stats),
     ("GET", re.compile(r"^/api/admin/orders$"), _admin_orders),

@@ -178,7 +178,7 @@ def _migrate(conn) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
-    _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''"})
+    _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''", "user_id": "INTEGER"})
     _add_missing_columns(conn, "products", {
         "unit": "TEXT NOT NULL DEFAULT 'шт'",
         "on_home": "INTEGER NOT NULL DEFAULT 0",
@@ -729,7 +729,7 @@ def expire_stale_orders(conn, now=None) -> int:
     return len(stale)
 
 
-def create_order(conn, payload) -> dict:
+def create_order(conn, payload, user_id=None) -> dict:
     if not isinstance(payload, dict):
         raise ValidationError({"body": "Ожидается объект с customer и items"})
     errors = {}
@@ -789,9 +789,9 @@ def create_order(conn, payload) -> dict:
 
         total = sum(qty * price for _, qty, price in lines)
         cur = conn.execute(
-            "INSERT INTO orders (customer_id, status, total, address, created_at)"
-            " VALUES (?, 'new', ?, ?, ?)",
-            (customer_id, total, customer["address"], now),
+            "INSERT INTO orders (customer_id, status, total, address, user_id, created_at)"
+            " VALUES (?, 'new', ?, ?, ?, ?)",
+            (customer_id, total, customer["address"], user_id, now),
         )
         order_id = cur.lastrowid
         for product_id, qty, price in lines:
@@ -870,6 +870,34 @@ def list_orders(conn) -> list:
         items_by_order.setdefault(row["order_id"], []).append({
             "product_id": row["product_id"],
             "name": row["product_name"],
+            "qty": row["qty"],
+            "price": row["price"],
+        })
+    for order in orders:
+        order["items"] = items_by_order.get(order["id"], [])
+    return orders
+
+
+def list_user_orders(conn, user_id) -> list:
+    """Заказы одного покупателя (по аккаунту), новые сверху, со статусом, трек-номером и составом."""
+    orders = [
+        dict(row) for row in conn.execute(
+            "SELECT id, status, total, address, tracking, created_at FROM orders"
+            " WHERE user_id = ? ORDER BY created_at DESC, id DESC", (user_id,)
+        )
+    ]
+    items_by_order = {}
+    for row in conn.execute(
+        "SELECT oi.order_id, oi.product_id, p.name AS product_name, p.unit AS unit, oi.qty, oi.price"
+        "  FROM order_items oi"
+        "  JOIN products p ON p.id = oi.product_id"
+        "  JOIN orders o ON o.id = oi.order_id"
+        " WHERE o.user_id = ? ORDER BY oi.id", (user_id,)
+    ):
+        items_by_order.setdefault(row["order_id"], []).append({
+            "product_id": row["product_id"],
+            "name": row["product_name"],
+            "unit": row["unit"],
             "qty": row["qty"],
             "price": row["price"],
         })

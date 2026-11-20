@@ -584,6 +584,62 @@
     reveal(grid);
   }
 
+  /* ---------- Мои заказы (по аккаунту) ---------- */
+  function orderDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try {
+      return d.toLocaleString('ru-RU', { timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return d.toLocaleString('ru-RU'); }
+  }
+
+  function orderCardHTML(o) {
+    var items = (o.items || []).map(function (i) {
+      return '<li>' + esc(i.name) + ' × ' + num(i.qty) + ' ' + esc(i.unit || 'шт') + '</li>';
+    }).join('');
+    var track;
+    if (o.tracking) {
+      track = '<p class="order-track">Трек-номер: <strong>' + esc(o.tracking) + '</strong> ' +
+        '<a href="https://novaposhta.ua/tracking/?cargo_number=' + encodeURIComponent(o.tracking) +
+        '" target="_blank" rel="noopener noreferrer">Отследить</a></p>';
+    } else if (o.status === 'new' || o.status === 'paid') {
+      track = '<p class="order-track">Трек-номер появится после отправки</p>';
+    } else {
+      track = '';
+    }
+    return '<li class="order-card">' +
+      '<div class="order-head"><strong>Заказ № ' + esc(o.id) + '</strong>' +
+      '<span class="order-status order-status--' + esc(o.status) + '">' + esc(statusLabel(o.status)) + '</span></div>' +
+      '<p class="order-date">' + esc(orderDate(o.created_at)) + '</p>' +
+      '<ul class="order-items">' + items + '</ul>' +
+      '<p class="order-total">' + money(o.total) + '</p>' +
+      '<p class="order-address">' + esc(o.address || '') + '</p>' + track + '</li>';
+  }
+
+  function openOrders(opener) {
+    var d = el('orders-dialog');
+    var status = el('orders-status');
+    var list = el('orders-list');
+    openDialog(d, opener);
+    status.hidden = false;
+    status.textContent = 'Загружаем заказы…';
+    list.hidden = true;
+    fetch('/api/my/orders', { headers: { Accept: 'application/json' } }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }).then(function (orders) {
+      if (!Array.isArray(orders) || !orders.length) {
+        status.textContent = 'Заказов пока нет. Оформите первый в магазине.';
+        return;
+      }
+      list.innerHTML = orders.map(orderCardHTML).join('');
+      status.hidden = true;
+      list.hidden = false;
+    }).catch(function () {
+      status.textContent = 'Не удалось загрузить заказы. Попробуйте ещё раз.';
+    });
+  }
+
   function renderAll() {
     renderHome();
     renderHero();
@@ -644,6 +700,10 @@
   function initShop() {
     if (el('product-dialog')) bindDialog(el('product-dialog'));
     bindDialog(el('cart-dialog'));
+    if (el('orders-dialog') && el('orders-open')) {
+      bindDialog(el('orders-dialog'));
+      el('orders-open').addEventListener('click', function (e) { openOrders(e.currentTarget); });
+    }
     document.addEventListener('click', onShopClick);
     el('cart-open').addEventListener('click', function (e) { openCart(e.currentTarget); });
     if (el('p-add')) el('p-add').addEventListener('click', function () { if (addToCart(currentId)) refreshAddButton(); });
