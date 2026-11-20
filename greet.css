@@ -1,4 +1,4 @@
-/* Приветствие и ранг на главной (greet.js). Стиль iOS Liquid Glass: цвета только из токенов styles.css */
+/* Приветствие и ранг на главной (greet.js). Расположение: «Привет,» сверху, ник ниже, затем «Ваш статус:» и ранг */
 
 .greet { padding: 18px 0 4px; text-align: center; }
 .greet[hidden] { display: none; }
@@ -6,10 +6,8 @@
 .greet-line {
   --greet-size: clamp(34px, 9.5vw, 52px);
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  column-gap: 0.28em;
+  flex-direction: column;
+  align-items: center;
   margin: 0;
   font-size: var(--greet-size);
   line-height: 1.15;
@@ -19,61 +17,170 @@
 .greet-canvas { display: block; flex: none; }
 .greet-name { max-width: 100%; overflow-wrap: anywhere; }
 
-/* Ранг: «Вы, [уровень] Название» */
+/* Статус: подпись и ранг в одной строке */
 .greet-rank {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 8px 10px;
-  margin: 10px 0 0;
-  font-size: 19px;
+  gap: 8px 12px;
+  margin: 14px 0 0;
+  font-size: 17px;
   color: var(--label-2);
   opacity: 0;
   transform: translateY(6px);
   transition: opacity 0.5s ease 0.2s, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s;
 }
 .greet.is-ready .greet-rank { opacity: 1; transform: none; }
+/* Значок ранга задан в пикселях (CSS пользователя), крупнее для главной */
+.greet-rank .rank-badge { zoom: 1.4; }
 
+@media (prefers-reduced-motion: reduce) {
+  .greet-rank { transition: none; transform: none; }
+}
+
+/* ZENTOhub — Система 15 рангов (.rank-badge + .rank-badge--1 .. .rank-badge--15). CSS предоставлен пользователем, по его просьбе с яркими цветами и свечением */
 .rank-badge {
-  --tier: var(--label);
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 16px 5px 5px;
   border-radius: 999px;
-  background: var(--glass-sheen), rgba(30, 32, 46, 0.72);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 32px rgba(0, 0, 0, 0.35);
-  color: var(--tier);
-  font-weight: 700;
-  font-size: 22px;
-  line-height: 1.1;
+  padding: 1px;
+  overflow: hidden;
+  line-height: 1;
 }
-.rank-badge[data-tier="2"] { --tier: var(--tint-text); }
-.rank-badge[data-tier="3"] { --tier: #64D2FF; }
-.rank-badge[data-tier="4"] { --tier: #BF5AF2; }
-.rank-badge[data-tier="5"] { --tier: var(--orange); }
-
-.rank-lvl {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
+.rank-badge__inner {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 4px 4px;
+  border-radius: 999px;
+  background: rgba(22, 27, 40, 0.90);
+  overflow: hidden;
+}
+.rank-badge__num {
+  width: 21px;
+  height: 21px;
   border-radius: 50%;
-  border: 2px solid var(--tier);
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
+.rank-badge__name { font-size: 12.5px; font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; }
+.rank-badge__icon { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; margin-left: -2px; }
+.rank-badge__icon[hidden] { display: none; }
+.rank-badge__icon svg { width: 100%; height: 100%; }
+.rank-badge--13 .rank-badge__icon { color: #fde047; }
+.rank-badge--14 .rank-badge__icon { color: #fde68a; }
+.rank-badge--15 .rank-badge__icon { color: #fbbf24; }
 
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .rank-badge { background: #1C1D2A; }
+@keyframes rankShimmer {
+  0%, 60% { transform: translateX(-170%) skewX(-24deg); opacity: 0; }
+  72% { opacity: 1; }
+  88%, 100% { transform: translateX(310%) skewX(-24deg); opacity: 0; }
 }
-@media (prefers-reduced-transparency: reduce) {
-  .rank-badge { background: #1C1D2A; -webkit-backdrop-filter: none; backdrop-filter: none; }
+@keyframes borderRotate { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes apexBreath {
+  0%, 100% { box-shadow: 0 0 20px rgba(250,204,21,0.30), 0 0 34px rgba(225,29,72,0.20), 0 6px 18px rgba(0,0,0,0.56); }
+  50% { box-shadow: 0 0 28px rgba(254,240,138,0.48), 0 0 44px rgba(139,124,246,0.28), 0 6px 20px rgba(0,0,0,0.62); }
 }
+
+/* Тир 1: База */
+.rank-badge--1 { background: rgba(156,163,175,0.16); }
+.rank-badge--1 .rank-badge__inner { background: rgba(24,28,39,0.86); }
+.rank-badge--1 .rank-badge__num { background: rgba(156,163,175,0.10); border: 1px solid rgba(156,163,175,0.20); color: #9ca3af; }
+.rank-badge--1 .rank-badge__name { color: #9ca3af; font-weight: 600; }
+
+.rank-badge--2 { background: rgba(203,213,225,0.26); }
+.rank-badge--2 .rank-badge__inner { background: rgba(25,31,44,0.90); }
+.rank-badge--2 .rank-badge__num { background: rgba(203,213,225,0.16); border: 1px solid rgba(203,213,225,0.42); color: #e2e8f0; }
+.rank-badge--2 .rank-badge__name { color: #cbd5e1; font-weight: 600; }
+
+.rank-badge--3 { background: rgba(147,197,253,0.34); }
+.rank-badge--3 .rank-badge__inner { background: linear-gradient(180deg, rgba(22,32,50,0.92), rgba(17,24,39,0.94)); }
+.rank-badge--3 .rank-badge__num { background: rgba(147,197,253,0.16); border: 1.5px solid rgba(147,197,253,0.62); color: #bfdbfe; }
+.rank-badge--3 .rank-badge__name { color: #e2f0ff; }
+
+/* Тир 2: Оперативники */
+.rank-badge--4 { background: rgba(45,212,191,0.44); box-shadow: 0 2px 10px rgba(45,212,191,0.08); }
+.rank-badge--4 .rank-badge__inner { background: linear-gradient(180deg, rgba(16,40,44,0.92), rgba(13,25,32,0.96)); box-shadow: inset 0 1px 0 rgba(45,212,191,0.20); }
+.rank-badge--4 .rank-badge__num { background: rgba(45,212,191,0.16); border: 1.5px solid #2dd4bf; color: #5eead4; }
+.rank-badge--4 .rank-badge__name { color: #ccfbf1; }
+
+.rank-badge--5 { background: linear-gradient(135deg, rgba(52,211,153,0.64), rgba(16,185,129,0.42)); box-shadow: 0 2px 12px rgba(52,211,153,0.14); }
+.rank-badge--5 .rank-badge__inner { background: linear-gradient(180deg, rgba(14,42,36,0.94), rgba(11,25,24,0.96)); box-shadow: inset 0 1px 0 rgba(110,231,183,0.26); }
+.rank-badge--5 .rank-badge__num { background: rgba(16,185,129,0.28); border: 1.5px solid #34d399; color: #a7f3d0; }
+.rank-badge--5 .rank-badge__name { color: #d1fae5; }
+
+.rank-badge--6 { background: linear-gradient(135deg, rgba(96,165,250,0.78), rgba(37,99,235,0.62)); box-shadow: 0 0 16px rgba(59,130,246,0.24); }
+.rank-badge--6 .rank-badge__inner { background: linear-gradient(180deg, rgba(17,33,64,0.94), rgba(12,21,40,0.96)); box-shadow: inset 0 1px 0 rgba(147,197,253,0.24); }
+.rank-badge--6 .rank-badge__num { background: #2563eb; color: #fff; box-shadow: 0 0 8px rgba(59,130,246,0.55); }
+.rank-badge--6 .rank-badge__name { color: #eff6ff; }
+
+/* Тир 3: Элита */
+.rank-badge--7 { padding: 1.15px; background: linear-gradient(135deg, #818cf8, #6366f1 55%, #4338ca); box-shadow: 0 0 18px rgba(99,102,241,0.26); }
+.rank-badge--7 .rank-badge__inner { background: linear-gradient(180deg, rgba(22,24,58,0.95), rgba(13,15,36,0.97)); }
+.rank-badge--7 .rank-badge__num { background: linear-gradient(135deg, #818cf8, #4f46e5); color: #fff; }
+.rank-badge--7 .rank-badge__name { background: linear-gradient(90deg, #fff, #a5b4fc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.rank-badge--8 { padding: 1.2px; background: linear-gradient(135deg, #c4b5fd, #8b7cf6 50%, #6d5ce7); box-shadow: 0 0 20px rgba(139,124,246,0.32); }
+.rank-badge--8 .rank-badge__inner { background: linear-gradient(180deg, rgba(30,23,60,0.95), rgba(16,14,34,0.98)); }
+.rank-badge--8 .rank-badge__num { background: linear-gradient(135deg, #a78bfa, #6d5ce7); color: #fff; }
+.rank-badge--8 .rank-badge__name { background: linear-gradient(90deg, #fff, #c4b5fd 58%, #a78bfa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.rank-badge--9 { padding: 1.25px; background: linear-gradient(135deg, #c084fc, #e879f9 52%, #db2777); box-shadow: 0 4px 18px rgba(192,132,252,0.30), 0 0 16px rgba(232,121,249,0.20); }
+.rank-badge--9 .rank-badge__inner { background: linear-gradient(160deg, rgba(38,18,54,0.96), rgba(18,11,28,0.98)); }
+.rank-badge--9 .rank-badge__num { background: linear-gradient(135deg, #d8b4fe, #c026d3); color: #fff; }
+.rank-badge--9 .rank-badge__name { background: linear-gradient(90deg, #fdf4ff, #f0abfc 56%, #e879f9); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Тир 4: Верхушка */
+.rank-badge--10 { padding: 1.3px; background: linear-gradient(135deg, #fb7185, #f43f5e 50%, #9f1239); box-shadow: 0 4px 20px rgba(244,63,94,0.34); }
+.rank-badge--10 .rank-badge__inner { background: linear-gradient(160deg, rgba(44,13,24,0.96), rgba(19,8,14,0.98)); }
+.rank-badge--10 .rank-badge__inner::after { content: ""; position: absolute; top: -20%; left: 0; width: 44%; height: 140%; background: linear-gradient(90deg, transparent, rgba(255,228,230,0.25), transparent); animation: rankShimmer 5.5s ease-in-out infinite; pointer-events: none; }
+.rank-badge--10 .rank-badge__num { background: linear-gradient(135deg, #fb7185, #e11d48); color: #fff; }
+.rank-badge--10 .rank-badge__name { background: linear-gradient(90deg, #fff1f2, #fda4af 58%, #fb7185); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.rank-badge--11 { padding: 1.35px; background: linear-gradient(135deg, #fbbf24, #f97316 52%, #9a3412); box-shadow: 0 4px 20px rgba(249,115,22,0.34); }
+.rank-badge--11 .rank-badge__inner { background: linear-gradient(160deg, #271509, #140b05); }
+.rank-badge--11 .rank-badge__inner::after { content: ""; position: absolute; top: -20%; left: 0; width: 46%; height: 140%; background: linear-gradient(90deg, transparent, rgba(254,215,170,0.28), transparent); animation: rankShimmer 5.3s ease-in-out infinite; pointer-events: none; }
+.rank-badge--11 .rank-badge__num { background: linear-gradient(135deg, #fdba74, #ea580c); color: #1c0c03; }
+.rank-badge--11 .rank-badge__name { background: linear-gradient(90deg, #ffedd5, #fdba74 52%, #fb923c); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.rank-badge--12 { padding: 1.4px; background: linear-gradient(135deg, #fde047, #f59e0b 52%, #92400e); box-shadow: 0 4px 22px rgba(245,158,11,0.36); }
+.rank-badge--12 .rank-badge__inner { background: linear-gradient(160deg, #1f1607, #0e0a04); }
+.rank-badge--12 .rank-badge__inner::after { content: ""; position: absolute; top: -20%; left: 0; width: 48%; height: 140%; background: linear-gradient(90deg, transparent, rgba(254,240,138,0.32), transparent); animation: rankShimmer 5.0s ease-in-out infinite; pointer-events: none; }
+.rank-badge--12 .rank-badge__num { background: linear-gradient(135deg, #fde047, #d97706); color: #191002; }
+.rank-badge--12 .rank-badge__name { background: linear-gradient(90deg, #fef9c3, #fcd34d 52%, #f59e0b); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Тир 5: Легенды */
+.rank-badge--13 { padding: 1.5px; background: linear-gradient(135deg, #fef9c3, #facc15 36%, #d97706 72%, #fef08a); box-shadow: 0 0 24px rgba(250,204,21,0.38), 0 4px 16px rgba(217,119,6,0.30); }
+.rank-badge--13 .rank-badge__inner { background: linear-gradient(160deg, #1a1305, #0b0904); }
+.rank-badge--13 .rank-badge__inner::after { content: ""; position: absolute; top: -20%; left: 0; width: 52%; height: 140%; background: linear-gradient(90deg, transparent, rgba(254,249,195,0.40), transparent); animation: rankShimmer 4.7s ease-in-out infinite; pointer-events: none; }
+.rank-badge--13 .rank-badge__num { background: linear-gradient(140deg, #fef08a, #eab308 55%, #b45309); color: #140d02; }
+.rank-badge--13 .rank-badge__name { background: linear-gradient(90deg, #fffbeb, #fef08a 40%, #f59e0b 84%, #fde047); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; }
+
+.rank-badge--14 { padding: 1.65px; background: #141222; box-shadow: 0 0 22px rgba(167,139,250,0.30), 0 0 32px rgba(250,204,21,0.20); }
+.rank-badge--14::before { content: ""; position: absolute; top: 50%; left: 50%; width: 280px; height: 280px; margin: -140px 0 0 -140px; border-radius: 50%; background: conic-gradient(from 0deg, #f8fafc, #c4b5fd 75deg, #8b7cf6 145deg, #fde68a 230deg, #94a3b8 300deg, #f8fafc); animation: borderRotate 7.2s linear infinite; z-index: 0; pointer-events: none; }
+.rank-badge--14 .rank-badge__inner { background: linear-gradient(160deg, #0d0e18, #0b0c14); }
+.rank-badge--14 .rank-badge__inner::after { content: ""; position: absolute; top: -20%; left: 0; width: 50%; height: 140%; background: linear-gradient(90deg, transparent, rgba(241,245,249,0.28), transparent); animation: rankShimmer 4.8s ease-in-out infinite; pointer-events: none; }
+.rank-badge--14 .rank-badge__num { background: linear-gradient(140deg, #f8fafc, #c4b5fd 52%, #fde047); color: #0b0c14; font-weight: 900; }
+.rank-badge--14 .rank-badge__name { background: linear-gradient(90deg, #fff, #e2e8f0 42%, #fde68a 82%, #c4b5fd); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; }
+
+.rank-badge--15 { padding: 1.85px; background: #160d14; animation: apexBreath 4.2s ease-in-out infinite; }
+.rank-badge--15::before { content: ""; position: absolute; top: 50%; left: 50%; width: 280px; height: 280px; margin: -140px 0 0 -140px; border-radius: 50%; background: conic-gradient(from 0deg, #fef08a, #f59e0b 62deg, #e11d48 138deg, #8b7cf6 218deg, #f59e0b 292deg, #fef08a); animation: borderRotate 6.2s linear infinite; z-index: 0; pointer-events: none; }
+.rank-badge--15 .rank-badge__inner { background: linear-gradient(160deg, #0a0b12, #07080d); }
+.rank-badge--15 .rank-badge__inner::after { content: ""; position: absolute; top: -20%; left: 0; width: 54%; height: 140%; background: linear-gradient(90deg, transparent, rgba(254,249,195,0.34), transparent); animation: rankShimmer 4.4s ease-in-out infinite; pointer-events: none; }
+.rank-badge--15 .rank-badge__num { background: linear-gradient(140deg, #fffbeb, #facc15 44%, #e11d48); color: #07080d; font-weight: 900; }
+.rank-badge--15 .rank-badge__name { background: linear-gradient(90deg, #fff, #fef08a 38%, #fbbf24 72%, #fda4af); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; letter-spacing: 0.02em; }
+
+/* Без движения: анимации выключены (добавлено для доступности) */
 @media (prefers-reduced-motion: reduce) {
-  .greet-rank { transition: none; }
-  .greet-rank { transform: none; }
+  .rank-badge, .rank-badge::before, .rank-badge__inner::after { animation: none !important; }
 }

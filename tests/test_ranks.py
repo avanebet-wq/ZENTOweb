@@ -26,7 +26,7 @@ class RankTableTest(unittest.TestCase):
         self.assertEqual(ranks.rank_for(30)["level"], 2)
         self.assertEqual(ranks.rank_for(ranks.threshold(15))["level"], 15)
         top = ranks.rank_for(10 ** 9)
-        self.assertEqual((top["level"], top["name"], top["next_at"]), (15, "Босс боссов", None))
+        self.assertEqual((top["level"], top["name"], top["next_at"]), (15, "Архитектор", None))
 
     def test_negative_xp_is_level_one(self):
         self.assertEqual(ranks.rank_for(-5)["xp"], 0)
@@ -83,7 +83,7 @@ class AwardXpTest(ProfileServerBase):
         user = resp.body["user"]
         self.assertEqual(user["xp"], 10)
         self.assertEqual(user["rank"]["level"], 1)
-        self.assertEqual(user["rank"]["name"], "Новичок")
+        self.assertEqual(user["rank"]["name"], "Наблюдатель")
         self.assertEqual(user["rank"]["next_at"], 30)
 
 
