@@ -130,8 +130,8 @@ class PublicIdFormatTest(unittest.TestCase):
         store.init_db(self.db_path, products_path=None)
         rows = sql(self.db_path, "SELECT code, title, how_to, image FROM achievements ORDER BY rowid")
         self.assertEqual([row[0] for row in rows], CATALOG_CODES)
-        self.assertEqual(rows[0], ("first_purchase", "За первую покупку",
-                                   "Сделайте первую покупку в магазине", "first_purchase.webp"))
+        self.assertEqual(rows[0], ("first_purchase", "Первая покупка",
+                                   "Сделайте первую покупку в магазине", "first_purchase.svg"))
         self.assertEqual(rows[1][2], "Зарегистрируйтесь на сайте")
         self.assertEqual(rows[2][2], "Загрузите фото в профиль")
         self.assertEqual(rows[3][2], "Напишите описание профиля")
@@ -326,9 +326,9 @@ class RegistrationAchievementTest(AchievementServerBase):
             self.assertEqual(set(entry), ENTRY_KEYS)
             self.assertTrue(entry["image_url"].startswith("/assets/achievements/"))
         by_code = {entry["code"]: entry for entry in achievements_list}
-        self.assertEqual(by_code["first_purchase"]["title"], "За первую покупку")
+        self.assertEqual(by_code["first_purchase"]["title"], "Первая покупка")
         self.assertEqual(by_code["first_purchase"]["how_to"], "Сделайте первую покупку в магазине")
-        self.assertEqual(by_code["first_purchase"]["image_url"], "/assets/achievements/first_purchase.webp")
+        self.assertEqual(by_code["first_purchase"]["image_url"], "/assets/achievements/first_purchase.svg")
         self.assertEqual(by_code["profile_bio"]["image_url"], "/assets/achievements/profile_bio.svg")
         self.assertIs(by_code["first_login"]["earned"], True)
         for code in ("first_purchase", "profile_photo", "profile_bio"):
@@ -447,14 +447,8 @@ class AchievementImageServeTest(AchievementServerBase):
     def get_image(self, name):
         return self.request("GET", f"/assets/achievements/{name}")
 
-    def test_purchase_medal_is_served_as_webp(self):
-        resp = self.get_image("first_purchase.webp")
-        self.assertEqual(resp.status, 200)
-        self.assertEqual(resp.headers["Content-Type"], "image/webp")
-        self.assertEqual(resp.raw[:4], b"RIFF")
-
     def test_other_medals_are_served_as_svg(self):
-        for name in ("first_login.svg", "profile_photo.svg", "profile_bio.svg"):
+        for name in ("first_purchase.svg", "first_login.svg", "profile_photo.svg", "profile_bio.svg"):
             with self.subTest(name=name):
                 resp = self.get_image(name)
                 self.assertEqual(resp.status, 200)

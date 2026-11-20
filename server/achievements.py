@@ -18,10 +18,10 @@ IMAGE_URL_PREFIX = "/assets/achievements/"
 CATALOG = (
     {
         "code": FIRST_PURCHASE,
-        "title": "За первую покупку",
+        "title": "Первая покупка",
         "description": "Награда за первый заказ в магазине ZENTO.",
         "how_to": "Сделайте первую покупку в магазине",
-        "image": "first_purchase.webp",
+        "image": "first_purchase.svg",
     },
     {
         "code": FIRST_LOGIN,
