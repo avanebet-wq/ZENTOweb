@@ -330,7 +330,7 @@ class RegistrationAchievementTest(AchievementServerBase):
         self.assertEqual(by_code["first_purchase"]["how_to"], "Сделайте первую покупку в магазине")
         self.assertEqual(by_code["first_purchase"]["image_url"], "/assets/achievements/first_purchase.svg")
         self.assertEqual(by_code["profile_bio"]["image_url"], "/assets/achievements/profile_bio.svg")
-        self.assertEqual(by_code["first_login"]["rarity"], {"key": "common", "name": "Обычная", "tier": 1})
+        self.assertEqual(by_code["first_login"]["rarity"], {"key": "common", "name": "Common", "tier": 1})
         self.assertEqual(by_code["first_purchase"]["rarity"]["tier"], 4)
         self.assertIs(by_code["first_login"]["earned"], True)
         for code in ("first_purchase", "profile_photo", "profile_bio"):

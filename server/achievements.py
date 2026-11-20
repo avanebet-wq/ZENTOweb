@@ -17,14 +17,14 @@ IMAGE_URL_PREFIX = "/assets/achievements/"
 
 # Редкости от самой простой к самой редкой. tier 1..8 нужен интерфейсу: чем выше, тем заметнее название.
 RARITIES = (
-    {"key": "common", "name": "Обычная", "tier": 1},
-    {"key": "uncommon", "name": "Необычная", "tier": 2},
-    {"key": "rare", "name": "Редкая", "tier": 3},
-    {"key": "mythical", "name": "Мифическая", "tier": 4},
-    {"key": "legendary", "name": "Легендарная", "tier": 5},
-    {"key": "ancient", "name": "Древняя", "tier": 6},
-    {"key": "exceedingly_rare", "name": "Крайне редкая", "tier": 7},
-    {"key": "immortal", "name": "Бессмертная", "tier": 8},
+    {"key": "common", "name": "Common", "tier": 1},
+    {"key": "uncommon", "name": "Uncommon", "tier": 2},
+    {"key": "rare", "name": "Rare", "tier": 3},
+    {"key": "mythical", "name": "Mythical", "tier": 4},
+    {"key": "legendary", "name": "Legendary", "tier": 5},
+    {"key": "ancient", "name": "Ancient", "tier": 6},
+    {"key": "exceedingly_rare", "name": "Exceedingly Rare", "tier": 7},
+    {"key": "immortal", "name": "Immortal", "tier": 8},
 )
 RARITY_BY_KEY = {item["key"]: item for item in RARITIES}
 

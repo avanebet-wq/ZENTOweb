@@ -920,7 +920,7 @@
       el.tipText.textContent = String(a.how_to || 'Условия пока не описаны.');
     }
     var r = a.rarity || {};
-    el.tipRarity.textContent = String(r.name || 'Обычная');
+    el.tipRarity.textContent = String(r.name || 'Common');
     el.tipRarity.setAttribute('data-tier', String(Math.max(1, Math.min(8, parseInt(r.tier, 10) || 1))));
     el.tipArt.replaceChildren();
     el.tipArt.classList.toggle('is-earned', !!a.earned);
