@@ -23,17 +23,17 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 8px 12px;
-  margin: 14px 0 0;
-  font-size: 17px;
+  gap: 6px 8px;
+  margin: 10px 0 0;
+  font-size: 15px;
   color: var(--label-2);
   opacity: 0;
   transform: translateY(6px);
   transition: opacity 0.5s ease 0.2s, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s;
 }
 .greet.is-ready .greet-rank { opacity: 1; transform: none; }
-/* Значок ранга задан в пикселях (CSS пользователя), крупнее для главной */
-.greet-rank .rank-badge { zoom: 1.4; }
+/* Значок ранга: размер из CSS пользователя, компактно и рядом с «Ваш статус:» */
+.greet-rank .rank-badge { zoom: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .greet-rank { transition: none; transform: none; }
