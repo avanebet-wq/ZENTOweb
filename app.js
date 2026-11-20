@@ -362,10 +362,6 @@
     clearFormErrors();
     var customer = {};
     FIELDS.forEach(function (n) { customer[n] = el('f-' + n).value.trim(); });
-    customer.address = 'Новая почта, поштомат № ' + customer.postomat + ', ' + customer.city;
-    customer.email = '';
-    delete customer.city;
-    delete customer.postomat;
 
     var firstBad = null;
     FIELDS.forEach(function (n) {
@@ -374,6 +370,11 @@
       if (msg && !firstBad) firstBad = el('f-' + n);
     });
     if (firstBad) { firstBad.focus(); return; }
+    // Данные для сервера: адрес собираем из города и номера поштомата, почта не нужна
+    customer.address = 'Новая почта, поштомат № ' + customer.postomat + ', ' + customer.city;
+    customer.email = '';
+    delete customer.city;
+    delete customer.postomat;
 
     var lines = cartLines();
     if (!lines.length) { setFormError('Корзина пуста. Добавьте товары и попробуйте снова.'); return; }
