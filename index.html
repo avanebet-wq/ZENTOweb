@@ -218,14 +218,64 @@
         </div>
       </section>
 
-      <!-- Полоса карточек: акции, новости, новинки. Данные: assets/promo.json; смена каждые 5 с (promo.js) -->
+      <!-- Новости: рулетка и анонсы бота и приложения. Пока только дизайн, кнопки никуда не ведут. Листает promo.js (смена каждые 5 с) -->
       <section class="section promo" id="promo" role="region" aria-roledescription="carousel" aria-labelledby="promo-title">
         <div class="container">
-          <div class="promo-head">
-            <h2 class="promo-heading" id="promo-title">Акции, новости и новинки</h2>
-          </div>
-          <div class="promo-viewport" id="promo-viewport" role="group" tabindex="0" aria-live="off" aria-label="Карточки: листайте стрелками или свайпом">
-            <div class="promo-track" id="promo-track"></div>
+          <h2 class="promo-heading" id="promo-title">Новости</h2>
+          <div class="promo-row" id="promo-row" tabindex="0" aria-live="off" aria-label="Карточки новостей: листайте пальцем или стрелками">
+            <article class="promo-card" role="group" aria-roledescription="slide">
+              <div class="promo-art">
+                <svg viewBox="0 0 160 160" aria-hidden="true">
+                <g transform="translate(80 86)">
+                  <circle r="62" fill="#1C1D2A"/>
+                  <path d="M0 0L0 -60A60 60 0 0 1 52 -30Z" fill="#3B5BDB"/>
+                  <path d="M0 0L52 -30A60 60 0 0 1 52 30Z" fill="#1F4E8C"/>
+                  <path d="M0 0L52 30A60 60 0 0 1 0 60Z" fill="#5B3FBF"/>
+                  <path d="M0 0L0 60A60 60 0 0 1 -52 30Z" fill="#7A2E4D"/>
+                  <path d="M0 0L-52 30A60 60 0 0 1 -52 -30Z" fill="#1B6A62"/>
+                  <path d="M0 0L-52 -30A60 60 0 0 1 0 -60Z" fill="#33398F"/>
+                  <circle r="62" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2"/>
+                  <circle r="17" fill="#0B0D18" stroke="rgba(255,255,255,.55)" stroke-width="4"/>
+                </g>
+                <path d="M68 12h24L80 34z" fill="#fff"/>
+              </svg>
+                <span class="promo-badge">New</span>
+              </div>
+              <p class="promo-tag">Испытай удачу</p>
+              <h3 class="promo-card-title">Крути рулетку</h3>
+              <p class="promo-text">Раз в сутки можно испытать удачу и забрать приз.</p>
+              <button class="promo-btn press" type="button" disabled>Скоро</button>
+            </article>
+            <article class="promo-card" role="group" aria-roledescription="slide">
+              <div class="promo-art">
+                <svg viewBox="0 0 160 160" aria-hidden="true">
+                <circle cx="80" cy="80" r="58" fill="#3B5BDB"/>
+                <path d="M40 78L116 46Q122 44 120 51L108 112Q106 118 100 114L82 100L70 112Q66 116 66 110L66 94L108 62L58 90L42 84Q37 82 40 78Z" fill="#fff"/>
+              </svg>
+                <span class="promo-badge">Скоро</span>
+              </div>
+              <p class="promo-tag">В разработке</p>
+              <h3 class="promo-card-title">Telegram-бот</h3>
+              <p class="promo-text">Бот ZENTO уже в разработке. Заказы и новости магазина будут прямо в Telegram.</p>
+              <button class="promo-btn press" type="button" disabled>Скоро</button>
+            </article>
+            <article class="promo-card" role="group" aria-roledescription="slide">
+              <div class="promo-art">
+                <svg viewBox="0 0 160 160" aria-hidden="true">
+                <rect x="46" y="14" width="68" height="132" rx="16" fill="none" stroke="#fff" stroke-width="7"/>
+                <rect x="70" y="24" width="20" height="5" rx="2.5" fill="#fff"/>
+                <rect x="58" y="44" width="44" height="44" rx="12" fill="#3B5BDB"/>
+                <path d="M70 66l8 8 14-16" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="58" y="100" width="44" height="8" rx="4" fill="rgba(255,255,255,.5)"/>
+                <rect x="58" y="116" width="30" height="8" rx="4" fill="rgba(255,255,255,.3)"/>
+              </svg>
+                <span class="promo-badge">Скоро</span>
+              </div>
+              <p class="promo-tag">В разработке</p>
+              <h3 class="promo-card-title">Приложение ZENTO</h3>
+              <p class="promo-text">Мы делаем приложение для телефона. Покупки и профиль будут всегда под рукой.</p>
+              <button class="promo-btn press" type="button" disabled>Скоро</button>
+            </article>
           </div>
           <div class="promo-dots" id="promo-dots"></div>
         </div>
