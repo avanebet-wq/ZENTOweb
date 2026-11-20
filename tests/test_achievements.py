@@ -39,7 +39,7 @@ PASSWORD = "Secret123"
 PUBLIC_ID_RE = re.compile(r"^[0-9]{10}$")
 CATALOG_CODES = ["first_purchase", "first_login", "profile_photo", "profile_bio"]
 IMAGE_MAX_BYTES = 60 * 1024
-ENTRY_KEYS = {"code", "title", "description", "how_to", "image_url", "earned", "granted_at"}
+ENTRY_KEYS = {"code", "title", "description", "how_to", "image_url", "rarity", "earned", "granted_at"}
 
 # Таблица users в том виде, как она была до public_id (но уже с ником и описанием).
 USERS_BEFORE_PUBLIC_ID = """CREATE TABLE users (
@@ -330,6 +330,8 @@ class RegistrationAchievementTest(AchievementServerBase):
         self.assertEqual(by_code["first_purchase"]["how_to"], "Сделайте первую покупку в магазине")
         self.assertEqual(by_code["first_purchase"]["image_url"], "/assets/achievements/first_purchase.svg")
         self.assertEqual(by_code["profile_bio"]["image_url"], "/assets/achievements/profile_bio.svg")
+        self.assertEqual(by_code["first_login"]["rarity"], {"key": "common", "name": "Обычная", "tier": 1})
+        self.assertEqual(by_code["first_purchase"]["rarity"]["tier"], 4)
         self.assertIs(by_code["first_login"]["earned"], True)
         for code in ("first_purchase", "profile_photo", "profile_bio"):
             self.assertIs(by_code[code]["earned"], False)

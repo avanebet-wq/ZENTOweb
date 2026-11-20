@@ -142,27 +142,65 @@ dialog.profile-screen[open] .profile-body { animation: pf-push 380ms var(--ease-
   border-radius: 50%; background: rgba(0, 0, 0, 0.45); color: var(--label-2);
 }
 .pf-medal-lock svg { width: 13px; height: 13px; }
-.pf-medal-title {
-  max-width: 96px; font-size: 13px; font-weight: 600; line-height: 1.25; text-align: center; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.pf-medal-state { font-size: 12px; line-height: 1.2; text-align: center; color: var(--label-2); }
 
-/* Подсказка по медали */
-.pf-tip {
-  margin: 12px 0 0; padding: 16px; border-radius: 16px;
+/* Окно достижения: квадратная карточка поверх профиля */
+.ach-modal {
+  width: min(86vw, 340px); aspect-ratio: 1 / 1; max-width: none; max-height: none; padding: 0; margin: auto;
+  border: 0; background: transparent; color: var(--label); overflow: visible;
+}
+.ach-modal::backdrop { background: rgba(7, 9, 18, 0.6); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.ach-modal[open] { animation: pf-tip-in 320ms var(--ease-spring) both; }
+@keyframes pf-tip-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+.ach-card {
+  position: relative; box-sizing: border-box; width: 100%; height: 100%; padding: 18px 18px 16px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  text-align: center; overflow-y: auto; border-radius: 28px;
   background: var(--glass-sheen), var(--sheet-base);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-shadow), var(--glass-rim-top), var(--glass-rim-edge);
-  animation: pf-tip-in 320ms var(--ease-spring) both;
 }
-@keyframes pf-tip-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
-.pf-tip h4 { margin: 0 0 4px; font-size: 17px; font-weight: 600; outline: none; }
-.pf-tip p { margin: 0 0 10px; }
+.ach-close { position: absolute; top: 10px; right: 10px; }
+.ach-art {
+  width: 96px; height: 96px; flex: none; margin-bottom: 4px; display: grid; place-items: center;
+  border-radius: 24px; overflow: hidden; background: var(--glass-sheen), var(--glass-tint);
+  box-shadow: var(--glass-rim-top), var(--glass-rim-edge);
+}
+.ach-art img { width: 100%; height: 100%; object-fit: contain; padding: 8px; box-sizing: border-box; }
+.ach-art:not(.is-earned) img { filter: grayscale(1); opacity: 0.45; }
+.ach-card h4 { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 700; outline: none; overflow-wrap: anywhere; }
+.ach-card p { margin: 0; }
+.ach-rarity { font-size: 15px; color: var(--label-2); }
 .pf-tip-kicker { font-size: 15px; color: var(--label-2); }
-.pf-tip-label { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--tint-text); text-transform: uppercase; letter-spacing: 0.02em; }
-.pf-tip-text { overflow-wrap: anywhere; }
-.pf-tip .btn { margin-top: 4px; }
+.pf-tip-label { font-size: 13px; font-weight: 600; color: var(--tint-text); text-transform: uppercase; letter-spacing: 0.02em; }
+.pf-tip-text { font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+
+/* Редкость: 8 ступеней. Цвета из таблицы качества; чем выше ступень, тем крупнее, жирнее и быстрее переливается */
+.rarity {
+  --r1: #fff; --r2: #C9CCD6; --speed: 6s;
+  display: inline-block; padding: 1px 4px; border-radius: 999px;
+  color: var(--r1); font-weight: 600; font-size: 15px; line-height: 1.3;
+  background: linear-gradient(100deg, var(--r1) 0%, var(--r2) 50%, var(--r1) 100%) 0 0 / 220% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: rarity-flow var(--speed) linear infinite;
+}
+@keyframes rarity-flow { from { background-position: 0 0; } to { background-position: -220% 0; } }
+.rarity[data-tier="2"] { --r1: #6A9BE8; --r2: #B5D0FF; --speed: 5.5s; }
+.rarity[data-tier="3"] { --r1: #5B7BE8; --r2: #A4B8FF; --speed: 5s; font-size: 16px; font-weight: 700; }
+.rarity[data-tier="4"] { --r1: #9A63FF; --r2: #D0B0FF; --speed: 4.5s; font-size: 16px; font-weight: 700; }
+.rarity[data-tier="5"] { --r1: #D83BEB; --r2: #FF98F6; --speed: 4s; font-size: 17px; font-weight: 700; padding: 1px 10px; }
+.rarity[data-tier="6"] { --r1: #F05252; --r2: #FFA394; --speed: 3.5s; font-size: 17px; font-weight: 800; padding: 1px 10px; }
+.rarity[data-tier="7"] { --r1: #D9B40F; --r2: #FFE56E; --speed: 3s; font-size: 18px; font-weight: 800; padding: 2px 12px; }
+.rarity[data-tier="8"] { --r1: #B8921A; --r2: #F5D46B; --speed: 2.5s; font-size: 18px; font-weight: 800; padding: 2px 12px; }
+@supports (color: color-mix(in srgb, red 10%, transparent)) {
+  .rarity[data-tier="5"], .rarity[data-tier="6"], .rarity[data-tier="7"], .rarity[data-tier="8"] {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--r1) 45%, transparent);
+  }
+  .rarity[data-tier="7"], .rarity[data-tier="8"] { background-color: color-mix(in srgb, var(--r1) 14%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rarity { animation: none; background-position: 50% 0; }
+  .ach-modal[open] { animation: none; }
+}
 
 /* Настройки: grouped inset блоки */
 .pf-group {

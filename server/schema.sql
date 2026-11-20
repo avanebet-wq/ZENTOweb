@@ -151,7 +151,8 @@ CREATE TABLE IF NOT EXISTS achievements (
     title       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     how_to      TEXT NOT NULL DEFAULT '',
-    image       TEXT NOT NULL DEFAULT ''
+    image       TEXT NOT NULL DEFAULT '',
+    rarity      TEXT NOT NULL DEFAULT 'common'
 );
 
 -- Выданные достижения покупателя. Одна строка на пару (покупатель, достижение): повтор не дублирует.
