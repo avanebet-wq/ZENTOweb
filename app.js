@@ -580,6 +580,7 @@
     section.hidden = !list.length;
     grid.innerHTML = '';
     list.forEach(function (p, i) { grid.appendChild(productCard(p, i)); });
+    reveal(grid);
   }
 
   function renderAll() {
