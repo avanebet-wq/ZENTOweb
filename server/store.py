@@ -52,10 +52,10 @@ MAX_SEARCH_LEN = 100
 DB_TIMEOUT_SECONDS = 10
 DB_RETRY_ATTEMPTS = 3
 
-PRODUCT_FIELDS = ("name", "category", "price", "description", "color", "stock", "unit")
+PRODUCT_FIELDS = ("name", "category", "price", "description", "color", "stock", "unit", "on_home")
 PRODUCT_UNITS = ("шт", "л", "г", "кг")
 PUBLIC_PRODUCT_COLUMNS = ("id, name, category, price, description, color, stock, unit,"
-    " (SELECT sha256 FROM product_images pi WHERE pi.product_id = products.id) AS image_sha")
+    " on_home, (SELECT sha256 FROM product_images pi WHERE pi.product_id = products.id) AS image_sha")
 ADMIN_PRODUCT_COLUMNS = PUBLIC_PRODUCT_COLUMNS + ", created_at"
 
 PHONE_CHARS_RE = re.compile(r"^\+?[0-9 ()\-.]+$")
@@ -179,7 +179,10 @@ def _migrate(conn) -> None:
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
     _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''"})
-    _add_missing_columns(conn, "products", {"unit": "TEXT NOT NULL DEFAULT 'шт'"})
+    _add_missing_columns(conn, "products", {
+        "unit": "TEXT NOT NULL DEFAULT 'шт'",
+        "on_home": "INTEGER NOT NULL DEFAULT 0",
+    })
     _migrate_users(conn)
     # Профиль покупателя (описание и дата последней смены ника). Идемпотентно.
     _add_missing_columns(conn, "users", {
@@ -486,6 +489,12 @@ def _email(value):
     return text
 
 
+def _flag(value):
+    if isinstance(value, bool):
+        return int(value)
+    raise ValueError("ожидается true или false")
+
+
 def _unit(value):
     if value not in PRODUCT_UNITS:
         raise ValueError("единица измерения: " + ", ".join(PRODUCT_UNITS))
@@ -500,6 +509,7 @@ PRODUCT_CHECKS = {
     "description": lambda v: _text(v, 0, 2000),
     "color": _color,
     "unit": lambda v: _unit(v),
+    "on_home": lambda v: _flag(v),
 }
 PRODUCT_REQUIRED_ON_CREATE = ("name", "category", "price")
 
@@ -529,6 +539,7 @@ def clean_product(data, partial=False) -> dict:
         out.setdefault("color", "")
         out.setdefault("stock", 0)
         out.setdefault("unit", "шт")
+        out.setdefault("on_home", 0)
     return out
 
 
@@ -629,12 +640,30 @@ def create_product(conn, payload) -> dict:
     product_id = new_product_id()
     with transaction(conn):
         conn.execute(
-            "INSERT INTO products (id, name, category, price, description, color, stock, unit, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO products (id, name, category, price, description, color, stock, unit, on_home, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (product_id, data["name"], data["category"], data["price"],
-             data["description"], data["color"], data["stock"], data["unit"], to_iso(utc_now())),
+             data["description"], data["color"], data["stock"], data["unit"], data["on_home"], to_iso(utc_now())),
         )
     return get_product(conn, product_id, admin=True)
+
+
+def delete_product(conn, product_id) -> None:
+    """Удаляет товар. Товар, который уже был в заказах, не удаляем: история заказов должна остаться."""
+    with transaction(conn):
+        if get_product(conn, product_id) is None:
+            raise NotFound()
+        in_orders = conn.execute(
+            "SELECT 1 FROM order_items WHERE product_id = ? LIMIT 1", (product_id,)
+        ).fetchone()
+        if in_orders is not None:
+            raise ValidationError(
+                {"product": "товар уже был в заказах, его нельзя удалить: уберите с главной и поставьте остаток 0"},
+                message="Товар в заказах",
+            )
+        conn.execute("UPDATE events SET product_id = NULL WHERE product_id = ?", (product_id,))
+        conn.execute("DELETE FROM product_images WHERE product_id = ?", (product_id,))
+        conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
 
 
 def save_product_image(conn, product_id, data, meta, now) -> None:

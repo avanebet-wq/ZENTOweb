@@ -919,3 +919,9 @@ td .muted { font-size: 13px; }
 .edit-cover-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .edit-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .price-unit { font-size: .75em; font-weight: 500; color: rgba(235, 235, 245, .68); }
+
+/* Товары на главной и отметка «На главной» */
+.home-picks { padding-top: 8px; }
+.btn-danger-text { color: #FF453A; }
+.check-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 17px; color: #fff; cursor: pointer; }
+.check-row input { width: 22px; height: 22px; accent-color: #0A84FF; }

@@ -199,8 +199,12 @@
         <label for="ed-stock">Остаток</label>
         <input id="ed-stock" type="number" inputmode="numeric" min="0" step="1" required>
       </div>
+      <div class="field">
+        <label class="check-row" for="ed-home"><input id="ed-home" type="checkbox"> <span>На главной</span></label>
+      </div>
       <p class="form-error" id="ed-error" role="alert" hidden></p>
       <div class="edit-actions">
+        <button class="btn btn-ghost press btn-danger-text" type="button" id="ed-delete">Удалить товар</button>
         <button class="btn btn-ghost press" type="button" id="ed-cancel">Отмена</button>
         <button class="btn btn-primary press" type="submit" id="ed-save">Сохранить</button>
       </div>

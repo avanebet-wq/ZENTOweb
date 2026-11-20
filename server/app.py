@@ -467,6 +467,12 @@ def _admin_product_image_put(handler, params, query):
     return 200, {"ok": True}
 
 
+def _admin_product_delete(handler, params, query):
+    product_id = _admin_text_id(params["id"])
+    _run(handler, store.delete_product, product_id)
+    return 200, {"ok": True}
+
+
 def _admin_product_image_delete(handler, params, query):
     product_id = _admin_text_id(params["id"])
     _run(handler, store.delete_product_image, product_id)
@@ -872,6 +878,7 @@ ROUTES = [
     ("GET", re.compile(r"^/api/admin/products$"), _admin_products),
     ("PUT", PRODUCT_IMAGE_PATH, _admin_product_image_put),
     ("DELETE", PRODUCT_IMAGE_PATH, _admin_product_image_delete),
+    ("DELETE", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_delete),
     ("POST", re.compile(r"^/api/admin/products$"), _admin_product_create),
     ("PATCH", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_patch),
     ("GET", re.compile(r"^/api/admin/backup$"), _admin_backup),

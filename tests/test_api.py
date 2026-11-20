@@ -197,7 +197,7 @@ class ProductsTest(ServerTestCase):
         self.assertEqual(len(resp.body), 3)
         self.assertEqual(
             set(resp.body[0]),
-            {"id", "name", "category", "price", "description", "color", "stock", "unit", "image_sha"},
+            {"id", "name", "category", "price", "description", "color", "stock", "unit", "on_home", "image_sha"},
         )
         self.assertEqual([p["id"] for p in resp.body], ["p1", "p2", "p3"])
 
@@ -957,4 +957,22 @@ class ProductEditTest(ServerTestCase):
         self.assertEqual(self.upload(b"hello", content_type="text/plain").status, 415)
         self.assertEqual(self.upload(b"not an image").status, 400)
         self.assertEqual(self.upload(png).status, 200)
+
+    def test_home_flag_and_delete(self):
+        resp = self.admin("PATCH", "/api/admin/products/p1", body={"on_home": True})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["on_home"], 1)
+        self.assertEqual(self.admin("PATCH", "/api/admin/products/p1", body={"on_home": "да"}).status, 400)
+        # товар без заказов удаляется вместе с обложкой
+        created = self.admin("POST", "/api/admin/products", body={"name": "Временный", "category": "Тест", "price": 1})
+        pid = created.body["id"]
+        self.assertEqual(self.admin("DELETE", f"/api/admin/products/{pid}").status, 200)
+        self.assertEqual(self.admin("DELETE", f"/api/admin/products/{pid}").status, 404)
+
+    def test_product_in_orders_cannot_be_deleted(self):
+        self.create_order([{"product_id": "p2", "qty": 1}])
+        resp = self.admin("DELETE", "/api/admin/products/p2")
+        self.assertEqual(resp.status, 400)
+        self.assertIn("product", resp.body["fields"])
+        self.assertEqual(self.admin("GET", "/api/admin/products").status, 200)
 

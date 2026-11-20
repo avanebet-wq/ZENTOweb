@@ -571,7 +571,19 @@
   }
 
   // Каждый блок страницы рисуется, только если он есть (главная и каталог — разные страницы)
+  // Товары для главной: до трёх, у которых в админке стоит «На главной»
+  function renderHome() {
+    var section = el('home-picks');
+    var grid = el('home-grid');
+    if (!section || !grid) return;
+    var list = products.filter(function (p) { return num(p.on_home) === 1; }).slice(0, 3);
+    section.hidden = !list.length;
+    grid.innerHTML = '';
+    list.forEach(function (p, i) { grid.appendChild(productCard(p, i)); });
+  }
+
   function renderAll() {
+    renderHome();
     renderHero();
     renderChips();
     renderRows();
@@ -1025,6 +1037,7 @@
       el('ed-price').value = num(p.price);
       el('ed-stock').value = num(p.stock);
       el('ed-unit').value = p.unit || 'шт';
+      el('ed-home').checked = num(p.on_home) === 1;
       el('ed-file').value = '';
       el('ed-error').hidden = true;
       setCoverPreview(coverSrc(p));
@@ -1091,6 +1104,22 @@
       reader.readAsDataURL(f);
     });
     el('ed-cancel').addEventListener('click', closeEdit);
+    el('ed-delete').addEventListener('click', function () {
+      if (!editingId) return;
+      var id = editingId;
+      var name = (productsById[id] && productsById[id].name) || '';
+      if (!window.confirm('Удалить товар «' + name + '»? Это нельзя отменить.')) return;
+      api('/api/admin/products/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+        toast('Товар удалён: ' + name);
+        closeEdit();
+        return loadProducts();
+      }).catch(function (err) {
+        var errBox = el('ed-error');
+        errBox.textContent = err.status === 0 ? 'Нет связи с сервером'
+          : 'Не удалось удалить. Если товар уже был в заказах, его нельзя удалить: уберите «На главной» и поставьте остаток 0.';
+        errBox.hidden = false;
+      });
+    });
     el('ed-cover-remove').addEventListener('click', function () {
       if (!editingId) return;
       var id = editingId;
@@ -1119,7 +1148,8 @@
         method: 'PATCH',
         body: {
           name: name, category: category, description: el('ed-desc').value.trim(),
-          price: Number(price), stock: Number(stock), unit: el('ed-unit').value
+          price: Number(price), stock: Number(stock), unit: el('ed-unit').value,
+          on_home: el('ed-home').checked
         }
       }).then(function () {
         return file ? uploadCover(id, file) : null;

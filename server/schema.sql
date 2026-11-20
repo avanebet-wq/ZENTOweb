@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS products (
     color       TEXT NOT NULL DEFAULT '',
     stock       INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
     unit        TEXT NOT NULL DEFAULT 'шт',
+    on_home     INTEGER NOT NULL DEFAULT 0 CHECK (on_home IN (0, 1)),
     created_at  TEXT NOT NULL
 );
 
