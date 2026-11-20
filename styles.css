@@ -906,5 +906,6 @@ td .muted { font-size: 13px; }
 /* Статус заказа на телефоне: длинная подпись помещается */
 @media (max-width: 760px) {
   td[data-label="Статус"] .status-select { font-size: 14px; }
-  td[data-label="Покупатель"] { text-align: left; }
+  td[data-label="Покупатель"] { display: block; text-align: left; }
+  td[data-label="Покупатель"]::before { display: block; margin-bottom: 4px; }
 }
