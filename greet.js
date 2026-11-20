@@ -26,8 +26,8 @@
   var FAMILY = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif';
   var WHITE = [255, 255, 255];
   var BLUE = [64, 156, 255]; // --tint-text
-  // Этапы анимации, мс: «Привет» текстом, в пиксели, Привет→Hello, короткая пауза, в текст «Hello». Заканчивается на Hello
-  var T_HOLD = 700, T_PIX = 300, T_MORPH = 1000, T_STAY = 500, T_TEXT = 300;
+  // Этапы анимации, мс: «Привет» текстом, в пиксели, Привет→Hello, короткая пауза. Заканчивается на пиксельном «Hello» (остаётся пиксельным)
+  var T_HOLD = 700, T_PIX = 300, T_MORPH = 1000, T_STAY = 500;
 
   var state = { user: null, size: 48, w: 0, h: 0, dpr: 1, cell: 4, a: [], b: [], raf: 0, done: false, token: 0 };
 
@@ -112,6 +112,14 @@
     ctx.globalAlpha = 1;
   }
 
+  // Итог: пиксельное «Hello,» синим цветом, без возврата в обычный текст
+  function drawPixelHello() {
+    ctx.clearRect(0, 0, state.w, state.h);
+    ctx.fillStyle = mix(1);
+    var s = state.cell - 1;
+    state.b.forEach(function (p) { ctx.fillRect(p.x, p.y, s, s); });
+  }
+
   function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
   function lerp(a, b, t) { return a + (b - a) * t; }
   function mix(t) {
@@ -152,11 +160,11 @@
     stop();
     state.done = false;
     measure();
-    if (reduce && reduce.matches) { drawText(1, WORD_B); state.done = true; return; }
+    if (reduce && reduce.matches) { drawPixelHello(); state.done = true; return; }
     var toB = pairs(state.a, state.b);
     var still = state.a.map(function (p) { return { f: p, t: p, d: 0, o: 0 }; });
     var token = ++state.token;
-    var t1 = T_HOLD, t2 = t1 + T_PIX, t3 = t2 + T_MORPH, t4 = t3 + T_STAY, t5 = t4 + T_TEXT;
+    var t1 = T_HOLD, t2 = t1 + T_PIX, t3 = t2 + T_MORPH, t4 = t3 + T_STAY;
     var start = null;
     function frame(now) {
       if (token !== state.token) return;
@@ -166,8 +174,7 @@
       else if (t < t2) { var k = (t - t1) / T_PIX; drawText(1 - k); drawDots(still, 1, 0, k); drawTextOver(1 - k); }
       else if (t < t3) drawDots(toB, (t - t2) / T_MORPH, ease((t - t2) / T_MORPH), 1);
       else if (t < t4) drawDots(toB, 1, 1, 1);
-      else if (t < t5) { var m = (t - t4) / T_TEXT; drawDots(toB, 1, 1, 1 - m); drawTextOver(m, WORD_B); }
-      else { drawText(1, WORD_B); state.done = true; state.raf = 0; return; }
+      else { drawPixelHello(); state.done = true; state.raf = 0; return; }
       state.raf = window.requestAnimationFrame(frame);
     }
     state.raf = window.requestAnimationFrame(frame);
@@ -241,7 +248,7 @@
   window.addEventListener('resize', function () {
     if (!state.user || !state.done) return;
     window.clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(function () { measure(); drawText(1, WORD_B); }, 150);
+    resizeTimer = window.setTimeout(function () { measure(); drawPixelHello(); }, 150);
   });
   if (window.zentoSession && window.zentoSession.state === 'in') load();
 })();
