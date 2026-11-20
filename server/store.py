@@ -237,12 +237,14 @@ def _migrate_public_ids(conn) -> None:
 
 
 def seed_achievements(conn) -> None:
-    """Каталог достижений из achievements.CATALOG. Уже существующие строки не меняем."""
+    """Каталог достижений из achievements.CATALOG: новые строки добавляем, у существующих обновляем тексты и картинку."""
     with transaction(conn):
         for item in achievements.CATALOG:
             conn.execute(
-                "INSERT OR IGNORE INTO achievements (code, title, description, how_to, image)"
-                " VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO achievements (code, title, description, how_to, image)"
+                " VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT (code) DO UPDATE SET title = excluded.title,"
+                " description = excluded.description, how_to = excluded.how_to, image = excluded.image",
                 (item["code"], item["title"], item["description"], item["how_to"], item["image"]),
             )
 
