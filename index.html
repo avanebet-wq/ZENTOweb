@@ -351,13 +351,17 @@
             </div>
             <ul class="pf-ach-grid" id="pf-ach-grid" tabindex="0" aria-labelledby="pf-ach-title"></ul>
             <p class="field-hint" id="pf-ach-empty" hidden>Пока нет достижений.</p>
-            <div class="pf-tip" id="pf-tip" hidden>
-              <h4 id="pf-tip-title" tabindex="-1"></h4>
-              <p class="pf-tip-kicker" id="pf-tip-kicker"></p>
-              <p class="pf-tip-label" id="pf-tip-label" hidden>Как получить</p>
-              <p class="pf-tip-text" id="pf-tip-text"></p>
-              <button class="btn btn-ghost btn-small press" type="button" id="pf-tip-close">Закрыть</button>
-            </div>
+            <dialog class="ach-modal" id="pf-tip" aria-labelledby="pf-tip-title">
+              <div class="ach-card">
+                <button class="icon-btn ach-close press" type="button" id="pf-tip-close" aria-label="Закрыть"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                <div class="ach-art" id="pf-tip-art" aria-hidden="true"></div>
+                <h4 id="pf-tip-title" tabindex="-1"></h4>
+                <p class="ach-rarity">Редкость: <span class="rarity" id="pf-tip-rarity" data-tier="1"></span></p>
+                <p class="pf-tip-kicker" id="pf-tip-kicker"></p>
+                <p class="pf-tip-label" id="pf-tip-label" hidden>Как получить</p>
+                <p class="pf-tip-text" id="pf-tip-text"></p>
+              </div>
+            </dialog>
           </section>
         </div>
 

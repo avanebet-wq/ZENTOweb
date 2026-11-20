@@ -80,7 +80,9 @@
     tipKicker: $('pf-tip-kicker'),
     tipLabel: $('pf-tip-label'),
     tipText: $('pf-tip-text'),
-    tipClose: $('pf-tip-close')
+    tipClose: $('pf-tip-close'),
+    tipArt: $('pf-tip-art'),
+    tipRarity: $('pf-tip-rarity')
   };
 
   // st.base — что сейчас на сервере (после каждого успешного шага обновляется)
@@ -845,13 +847,14 @@
     var title = String(a.title || 'Достижение');
     var earned = !!a.earned;
     var granted = dateOf(a.granted_at);
+    var rar = a.rarity && a.rarity.name ? '. Редкость: ' + a.rarity.name : '';
 
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'pf-medal press' + (earned ? ' is-earned' : '');
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-controls', 'pf-tip');
-    btn.setAttribute('aria-label', title + ': ' + (earned ? 'получено' + (granted ? ' ' + granted : '') : 'не получено') + '. Нажмите, чтобы узнать подробнее');
+    btn.setAttribute('aria-label', title + ': ' + (earned ? 'получено' + (granted ? ' ' + granted : '') : 'не получено') + rar + '. Нажмите, чтобы узнать подробнее');
     btn._ach = a;
 
     var art = document.createElement('span');
@@ -881,15 +884,6 @@
     }
     li.appendChild(btn);
 
-    var name = document.createElement('span');
-    name.className = 'pf-medal-title';
-    name.textContent = title;
-    li.appendChild(name);
-
-    var state = document.createElement('span');
-    state.className = 'pf-medal-state';
-    state.textContent = earned ? (granted || 'Получено') : 'Не получено';
-    li.appendChild(state);
     return li;
   }
 
@@ -906,7 +900,7 @@
     closeTip(false);
   }
 
-  function tipOpen() { return !!st.tipFor && !el.tip.hidden; }
+  function tipOpen() { return !!st.tipFor && el.tip.open; }
 
   // Подсказка: полученная — описание и дата, невыполненная — «Как получить»
   function openTip(btn) {
@@ -925,19 +919,43 @@
       el.tipLabel.hidden = false;
       el.tipText.textContent = String(a.how_to || 'Условия пока не описаны.');
     }
-    el.tip.hidden = false;
+    var r = a.rarity || {};
+    el.tipRarity.textContent = String(r.name || 'Обычная');
+    el.tipRarity.setAttribute('data-tier', String(Math.max(1, Math.min(8, parseInt(r.tier, 10) || 1))));
+    el.tipArt.replaceChildren();
+    el.tipArt.classList.toggle('is-earned', !!a.earned);
+    var src = String(a.image_url || '');
+    if (IMG_PATH_RE.test(src)) {
+      var img = document.createElement('img');
+      img.alt = '';
+      img.width = 96;
+      img.height = 96;
+      img.addEventListener('error', function () { img.hidden = true; });
+      img.src = src;
+      el.tipArt.appendChild(img);
+    }
+    if (!el.tip.open) el.tip.showModal();
     el.tipTitle.focus({ preventScroll: true });
-    el.tip.scrollIntoView({ block: 'nearest', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
   }
 
   function closeTip(focusBack) {
     var btn = st.tipFor;
     st.tipFor = null;
-    el.tip.hidden = true;
+    if (el.tip.open) el.tip.close();
     if (!btn) return;
     btn.setAttribute('aria-expanded', 'false');
     if (focusBack && btn.isConnected) btn.focus({ preventScroll: true });
   }
+
+  // Escape и клик по фону закрывают окно; фокус возвращается на значок
+  el.tip.addEventListener('close', function () {
+    var btn = st.tipFor;
+    st.tipFor = null;
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', 'false');
+    if (btn.isConnected && dlg.open) btn.focus({ preventScroll: true });
+  });
+  el.tip.addEventListener('click', function (e) { if (e.target === el.tip) closeTip(true); });
 
   function onMedalClick(e) {
     var btn = e.target.closest ? e.target.closest('.pf-medal') : null;

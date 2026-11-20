@@ -15,6 +15,19 @@ PROFILE_BIO = "profile_bio"
 # Картинки лежат в assets/achievements/ и отдаются статикой сайта.
 IMAGE_URL_PREFIX = "/assets/achievements/"
 
+# Редкости от самой простой к самой редкой. tier 1..8 нужен интерфейсу: чем выше, тем заметнее название.
+RARITIES = (
+    {"key": "common", "name": "Обычная", "tier": 1},
+    {"key": "uncommon", "name": "Необычная", "tier": 2},
+    {"key": "rare", "name": "Редкая", "tier": 3},
+    {"key": "mythical", "name": "Мифическая", "tier": 4},
+    {"key": "legendary", "name": "Легендарная", "tier": 5},
+    {"key": "ancient", "name": "Древняя", "tier": 6},
+    {"key": "exceedingly_rare", "name": "Крайне редкая", "tier": 7},
+    {"key": "immortal", "name": "Бессмертная", "tier": 8},
+)
+RARITY_BY_KEY = {item["key"]: item for item in RARITIES}
+
 CATALOG = (
     {
         "code": FIRST_PURCHASE,
@@ -22,6 +35,7 @@ CATALOG = (
         "description": "Награда за первый заказ в магазине ZENTO.",
         "how_to": "Сделайте первую покупку в магазине",
         "image": "first_purchase.svg",
+        "rarity": "mythical",
     },
     {
         "code": FIRST_LOGIN,
@@ -29,6 +43,7 @@ CATALOG = (
         "description": "Награда за регистрацию на сайте ZENTO.",
         "how_to": "Зарегистрируйтесь на сайте",
         "image": "first_login.svg",
+        "rarity": "common",
     },
     {
         "code": PROFILE_PHOTO,
@@ -36,6 +51,7 @@ CATALOG = (
         "description": "Награда за фото в профиле.",
         "how_to": "Загрузите фото в профиль",
         "image": "profile_photo.svg",
+        "rarity": "rare",
     },
     {
         "code": PROFILE_BIO,
@@ -43,6 +59,7 @@ CATALOG = (
         "description": "Награда за описание в профиле.",
         "how_to": "Напишите описание профиля",
         "image": "profile_bio.svg",
+        "rarity": "uncommon",
     },
 )
 

@@ -184,6 +184,7 @@ def _migrate(conn) -> None:
         "xp": "INTEGER NOT NULL DEFAULT 0",
     })
     _reset_bad_nicks(conn)
+    _add_missing_columns(conn, "achievements", {"rarity": "TEXT NOT NULL DEFAULT 'common'"})
     _migrate_public_ids(conn)
     seed_achievements(conn)
     _backfill_achievements(conn, utc_now())
@@ -241,11 +242,13 @@ def seed_achievements(conn) -> None:
     with transaction(conn):
         for item in achievements.CATALOG:
             conn.execute(
-                "INSERT INTO achievements (code, title, description, how_to, image)"
-                " VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO achievements (code, title, description, how_to, image, rarity)"
+                " VALUES (?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT (code) DO UPDATE SET title = excluded.title,"
-                " description = excluded.description, how_to = excluded.how_to, image = excluded.image",
-                (item["code"], item["title"], item["description"], item["how_to"], item["image"]),
+                " description = excluded.description, how_to = excluded.how_to, image = excluded.image,"
+                " rarity = excluded.rarity",
+                (item["code"], item["title"], item["description"], item["how_to"], item["image"],
+                 item["rarity"]),
             )
 
 
@@ -1358,7 +1361,7 @@ def award_xp(conn, user_id, kind, now) -> int:
 def _achievement_list(conn, user_id) -> list:
     """Все достижения по порядку каталога. earned — выдано ли покупателю, granted_at — когда (или None)."""
     rows = conn.execute(
-        "SELECT a.code, a.title, a.description, a.how_to, a.image, ua.granted_at"
+        "SELECT a.code, a.title, a.description, a.how_to, a.image, a.rarity, ua.granted_at"
         " FROM achievements a"
         "  LEFT JOIN user_achievements ua ON ua.code = a.code AND ua.user_id = ?"
         " ORDER BY a.rowid",
@@ -1371,6 +1374,7 @@ def _achievement_list(conn, user_id) -> list:
             "description": row["description"],
             "how_to": row["how_to"],
             "image_url": achievements.IMAGE_URL_PREFIX + row["image"],
+            "rarity": achievements.RARITY_BY_KEY.get(row["rarity"], achievements.RARITIES[0]),
             "earned": row["granted_at"] is not None,
             "granted_at": row["granted_at"],
         }
