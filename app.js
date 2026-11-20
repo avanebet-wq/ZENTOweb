@@ -696,7 +696,7 @@
   /* ================= АДМИНКА ================= */
   var TOKEN_KEY = 'zento-admin-token';
   var STATUSES = [
-    ['new', 'Новый'],
+    ['new', 'Ожидает подтверждения'],
     ['paid', 'Оплачен'],
     ['shipped', 'Отправлен'],
     ['done', 'Выполнен'],
@@ -904,16 +904,38 @@
             : '';
           return '<tr><td>№ ' + esc(o.id) + '</td>' +
             '<td data-label="Дата">' + esc(fmtDate(o.created_at)) + '</td>' +
-            '<td data-label="Покупатель">' + esc(c.name || '—') + '<br><span class="muted">' + esc(c.phone || '') + '</span></td>' +
+            '<td data-label="Покупатель">' + esc(c.name || '—') + '<br><span class="muted">' + esc(c.phone || '') + '</span>' +
+            (o.address ? '<br><span class="muted">' + esc(o.address) + '</span>' : '') + '</td>' +
             '<td data-label="Товары">' + items + '</td>' +
             '<td data-label="Сумма">' + money(o.total) + '</td>' +
-            '<td data-label="Статус">' + statusSelect(o.id, o.status) + '</td></tr>';
-        }).join('') : '<tr><td colspan="6" class="muted">Заказов пока нет</td></tr>';
+            '<td data-label="Статус">' + statusSelect(o.id, o.status) + '</td>' +
+            '<td data-label="Трек-номер"><input class="tracking-input" type="text" maxlength="40" data-tracking="' + esc(o.id) +
+            '" data-prev="' + esc(o.tracking || '') + '" value="' + esc(o.tracking || '') +
+            '" placeholder="Появится после отправки" aria-label="Трек-номер заказа ' + esc(o.id) + '"></td></tr>';
+        }).join('') : '<tr><td colspan="7" class="muted">Заказов пока нет</td></tr>';
         loaded.orders = true;
       }).catch(function (err) { onApiError(err, 'Не удалось загрузить заказы'); });
     }
 
     el('orders-body').addEventListener('change', function (e) {
+      var track = e.target;
+      if (track.matches && track.matches('input[data-tracking]')) {
+        var tid = track.getAttribute('data-tracking');
+        var tprev = track.getAttribute('data-prev');
+        track.disabled = true;
+        api('/api/admin/orders/' + encodeURIComponent(tid), { method: 'PATCH', body: { tracking: track.value.trim() } })
+          .then(function (res) {
+            track.value = res && res.tracking != null ? res.tracking : track.value.trim();
+            track.setAttribute('data-prev', track.value);
+            toast(track.value ? 'Трек-номер заказа ' + tid + ' сохранён' : 'Трек-номер заказа ' + tid + ' очищен');
+          })
+          .catch(function (err) {
+            track.value = tprev;
+            onApiError(err, 'Не удалось сохранить трек-номер');
+          })
+          .then(function () { track.disabled = false; });
+        return;
+      }
       var sel = e.target;
       if (!sel.matches || !sel.matches('select[data-order]')) return;
       var id = sel.getAttribute('data-order');

@@ -897,3 +897,8 @@ td .muted { font-size: 13px; }
 @media (prefers-reduced-transparency: reduce) {
   dialog::backdrop { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+/* Поле трек-номера в админке: как поля iOS */
+.tracking-input { min-height: 44px; width: 100%; min-width: 150px; padding: 0 12px; font-size: 16px; border: 0; border-radius: 12px; background: rgba(118,118,128,.24); color: #fff; }
+.tracking-input:focus { outline: 2px solid #0A84FF; outline-offset: 2px; }
+.tracking-input::placeholder { color: rgba(235,235,245,.45); }

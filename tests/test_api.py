@@ -484,6 +484,31 @@ class StatusTransitionsTest(ServerTestCase):
         self.assertEqual(resp.status, 400)
         self.assertEqual(self.stock_of("p2"), 2)
 
+    def test_admin_sets_tracking_and_status_separately(self):
+        order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
+        resp = self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": " 20450123456789 "})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["tracking"], "20450123456789")
+        orders = {o["id"]: o for o in self.admin("GET", "/api/admin/orders").body}
+        self.assertEqual(orders[order_id]["tracking"], "20450123456789")
+        self.assertEqual(orders[order_id]["status"], "new")
+
+    def test_tracking_rejects_bad_characters_and_too_long(self):
+        order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
+        for bad in ("12 34", "<script>", "9" * 41):
+            resp = self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": bad})
+            self.assertEqual(resp.status, 400, bad)
+            self.assertIn("tracking", resp.body["fields"])
+
+    def test_tracking_can_be_cleared_and_unknown_order_is_404(self):
+        order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
+        self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": "ABC-1"})
+        resp = self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": ""})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["tracking"], "")
+        resp = self.admin("PATCH", "/api/admin/orders/999999", body={"tracking": "ABC-1"})
+        self.assertEqual(resp.status, 404)
+
     def test_unknown_status_and_missing_order(self):
         order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
         resp = self.set_status(order_id, "lost")
@@ -855,7 +880,7 @@ class DbTest(unittest.TestCase):
 
     def test_old_database_gets_address_column(self):
         schema = store.SCHEMA_PATH.read_text(encoding="utf-8")
-        old_line = "    address     TEXT NOT NULL DEFAULT '',\n    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created"
+        old_line = "    address     TEXT NOT NULL DEFAULT '',\n    tracking    TEXT NOT NULL DEFAULT '',\n    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created"
         self.assertIn(old_line, schema)
         old_schema = schema.replace(old_line, "    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created")
         tmp = Path(tempfile.mkdtemp(prefix="zento-old-"))

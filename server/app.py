@@ -422,9 +422,14 @@ def _admin_order_patch(handler, params, query):
     payload = handler._read_json()
     if not isinstance(payload, dict):
         raise ApiError(400, {"error": "Проверьте заполненные поля", "fields": {"body": "ожидается объект"}})
-    if "status" not in payload:
+    if "status" not in payload and "tracking" not in payload:
         raise ApiError(400, {"error": "Проверьте заполненные поля", "fields": {"status": "обязательное поле"}})
-    return 200, _run(handler, store.update_order_status, order_id, payload["status"])
+    result = {"id": order_id}
+    if "tracking" in payload:
+        result.update(_run(handler, store.update_order_tracking, order_id, payload["tracking"]))
+    if "status" in payload:
+        result.update(_run(handler, store.update_order_status, order_id, payload["status"]))
+    return 200, result
 
 
 def _admin_customers(handler, params, query):

@@ -176,6 +176,7 @@ def _migrate(conn) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+    _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''"})
     _migrate_users(conn)
     # Профиль покупателя (описание и дата последней смены ника). Идемпотентно.
     _add_missing_columns(conn, "users", {
@@ -732,6 +733,28 @@ def create_order(conn, payload) -> dict:
     return {"order_id": order_id, "total": total, "status": "new"}
 
 
+TRACKING_RE = re.compile(r"^[A-Za-z0-9-]{0,40}$")
+
+
+def update_order_tracking(conn, order_id, tracking) -> dict:
+    """Трек-номер посылки «Новой почты». Пустая строка — номера пока нет."""
+    if tracking is None:
+        tracking = ""
+    if not isinstance(tracking, str):
+        raise ValidationError({"tracking": "трек-номер — строка из букв, цифр и дефисов"})
+    tracking = tracking.strip()
+    if not TRACKING_RE.match(tracking):
+        raise ValidationError(
+            {"tracking": "только буквы, цифры и дефис, не больше 40 символов"},
+            message="Неверный трек-номер",
+        )
+    with transaction(conn):
+        cur = conn.execute("UPDATE orders SET tracking = ? WHERE id = ?", (tracking, order_id))
+        if cur.rowcount == 0:
+            raise NotFound()
+    return {"id": order_id, "tracking": tracking}
+
+
 def update_order_status(conn, order_id, status) -> dict:
     if status not in ORDER_STATUSES:
         raise ValidationError(
@@ -760,7 +783,7 @@ def update_order_status(conn, order_id, status) -> dict:
 def list_orders(conn) -> list:
     orders = [
         dict(row) for row in conn.execute(
-            "SELECT o.id, o.status, o.total, o.address, o.created_at,"
+            "SELECT o.id, o.status, o.total, o.address, o.tracking, o.created_at,"
             "       c.id AS customer_id, c.name AS customer_name,"
             "       c.phone AS customer_phone, c.email AS customer_email"
             "  FROM orders o JOIN customers c ON c.id = o.customer_id"
