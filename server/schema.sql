@@ -134,6 +134,16 @@ CREATE TABLE IF NOT EXISTS user_images (
     PRIMARY KEY (user_id, kind)
 );
 
+-- Опыт за активность: сколько XP начислено покупателю за сутки (по Киеву) по каждому виду действия.
+-- Потолок суток держит store.award_xp (server/ranks.py: XP_RULES).
+CREATE TABLE IF NOT EXISTS xp_daily (
+    user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    day     TEXT NOT NULL,
+    kind    TEXT NOT NULL,
+    amount  INTEGER NOT NULL CHECK (amount >= 0),
+    PRIMARY KEY (user_id, day, kind)
+);
+
 -- Достижения: каталог (заполняет store.seed_achievements при старте, INSERT OR IGNORE).
 -- Порядок показа — порядок вставки (rowid). Картинка — имя файла в assets/achievements/.
 CREATE TABLE IF NOT EXISTS achievements (

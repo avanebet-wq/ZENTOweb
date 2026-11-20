@@ -390,7 +390,7 @@
     if (!st.base) return;
     el.name.textContent = st.base.nick;
     el.id.textContent = st.base.public_id || '—';
-    el.at.textContent = st.base.nick ? '@' + st.base.nick : '—';
+    el.at.textContent = st.base.nick || '—';
     el.since.textContent = dateOf(st.base.created) || '—';
   }
 
