@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import achievements
 import auth
 import captcha
+import ranks
 
 SERVER_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = SERVER_DIR / "schema.sql"
@@ -182,6 +183,7 @@ def _migrate(conn) -> None:
     _add_missing_columns(conn, "users", {
         "bio": "TEXT NOT NULL DEFAULT ''",
         "nick_changed_at": "TEXT",
+        "xp": "INTEGER NOT NULL DEFAULT 0",
     })
     _migrate_public_ids(conn)
     seed_achievements(conn)
@@ -1299,11 +1301,38 @@ def _picture_fields(row) -> dict:
 
 
 PROFILE_SELECT = (
-    "SELECT u.id, u.nick, u.email, u.bio, u.nick_changed_at, u.public_id, u.created_at,"
+    "SELECT u.id, u.nick, u.email, u.bio, u.nick_changed_at, u.public_id, u.created_at, u.xp,"
     " (SELECT sha256 FROM user_images WHERE user_id = u.id AND kind = 'avatar') AS avatar_sha,"
     " (SELECT sha256 FROM user_images WHERE user_id = u.id AND kind = 'banner') AS banner_sha"
     " FROM users u WHERE "
 )
+
+
+KYIV = ZoneInfo("Europe/Kyiv")
+
+
+def award_xp(conn, user_id, kind, now) -> int:
+    """Начисляет XP за действие kind (ranks.XP_RULES) с суточным потолком по Киеву.
+    Возвращает, сколько начислено (0, если потолок уже выбран или вида нет). Сам открывает транзакцию."""
+    rule = ranks.XP_RULES.get(kind)
+    if rule is None:
+        return 0
+    day = now.astimezone(KYIV).date().isoformat()
+    used = conn.execute(
+        "SELECT amount FROM xp_daily WHERE user_id = ? AND day = ? AND kind = ?", (user_id, day, kind)
+    ).fetchone()
+    left = rule["cap"] - (used["amount"] if used else 0)
+    gain = min(rule["amount"], left)
+    if gain <= 0:
+        return 0
+    with transaction(conn):
+        conn.execute(
+            "INSERT INTO xp_daily (user_id, day, kind, amount) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT (user_id, day, kind) DO UPDATE SET amount = amount + excluded.amount",
+            (user_id, day, kind, gain),
+        )
+        conn.execute("UPDATE users SET xp = xp + ? WHERE id = ?", (gain, user_id))
+    return gain
 
 
 def _achievement_list(conn, user_id) -> list:
@@ -1352,6 +1381,8 @@ def own_profile(conn, user_id, now):
         "public_id": row["public_id"],
         "created_at": row["created_at"],
         "achievements": _achievement_list(conn, user_id),
+        "xp": row["xp"],
+        "rank": ranks.rank_for(row["xp"]),
     }
 
 

@@ -25,7 +25,7 @@ import store  # noqa: E402
 
 PASSWORD = "Secret123"
 OWN_KEYS = {"id", "nick", "email", "bio", "has_avatar", "has_banner", "avatar_v", "banner_v",
-            "nick_next_change_at", "public_id", "created_at", "achievements"}
+            "nick_next_change_at", "public_id", "created_at", "achievements", "xp", "rank"}
 PUBLIC_KEYS = {"nick", "bio", "has_avatar", "has_banner", "avatar_v", "banner_v"}
 
 

@@ -9,6 +9,7 @@
   <meta name="description" content="ZENTO — интернет-магазин: выбирайте товары, добавляйте их в корзину и оформляйте заказ.">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="capsule.css">
+  <link rel="stylesheet" href="greet.css">
   <link rel="stylesheet" href="profile.css">
   <link rel="stylesheet" href="captcha.css">
   <link rel="stylesheet" href="promo.css">
@@ -185,6 +186,25 @@
     </div>
 
     <main id="top">
+
+      <!-- Приветствие: «Привет» из пикселей превращается в «Hello» и обратно, ник и ранг (greet.js) -->
+      <section class="greet" id="greet" aria-label="Приветствие" hidden>
+        <div class="container">
+          <p class="greet-line">
+            <canvas class="greet-canvas" id="greet-canvas" aria-hidden="true"></canvas>
+            <span class="greet-name" id="greet-name" aria-hidden="true"></span>
+            <span class="visually-hidden" id="greet-sr"></span>
+          </p>
+          <p class="greet-rank">
+            <span>Вы,</span>
+            <span class="rank-badge" id="rank-badge" data-tier="1"><span class="rank-lvl" id="rank-lvl"></span><span id="rank-name"></span></span>
+          </p>
+          <div class="rank-progress">
+            <div class="rank-bar" id="rank-bar" role="progressbar" aria-label="Опыт до следующего ранга" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="rank-fill" id="rank-fill"></span></div>
+            <p class="rank-caption" id="rank-caption"></p>
+          </div>
+        </div>
+      </section>
 
       <!-- Главный блок: заголовок и фото товара. Фото одно на все товары (app.js: productPhotoSrc) -->
       <section class="hero" aria-labelledby="hero-title">
@@ -449,6 +469,7 @@
   <script src="captcha.js" defer></script>
   <script src="auth.js" defer></script>
   <script src="capsule.js" defer></script>
+  <script src="greet.js" defer></script>
   <script src="profile.js" defer></script>
 </body>
 </html>

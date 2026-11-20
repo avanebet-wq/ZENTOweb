@@ -676,6 +676,8 @@ def _auth_me(handler, params, query):
     user = None
     if token is not None:
         user = _run_auth(handler, store.user_for_session, auth.token_hash(token), store.utc_now())
+        if user is not None:  # вернулся по старой сессии: тоже ежедневный вход
+            _run_auth(handler, store.award_xp, user["id"], "login", store.utc_now())
     return 200, {"ok": True, "user": user}
 
 
@@ -689,6 +691,7 @@ def _auth_register(handler, params, query):
     token = auth.new_token()
     user = _run_auth(handler, store.register_user, data, payload.get("captcha_ticket"),
                      password_hash, auth.token_hash(token), store.utc_now())
+    _run_auth(handler, store.award_xp, user["id"], "login", store.utc_now())
     cookie = auth.session_cookie(token, handler.server.cookie_secure)
     return 201, {"ok": True, "user": _public_user(user)}, [("Set-Cookie", cookie)]
 
@@ -720,6 +723,7 @@ def _auth_login(handler, params, query):
 
     token = auth.new_token()
     _run_auth(handler, store.create_session, user["id"], auth.token_hash(token), store.utc_now())
+    _run_auth(handler, store.award_xp, user["id"], "login", store.utc_now())
     cookie = auth.session_cookie(token, handler.server.cookie_secure)
     return 200, {"ok": True, "user": _public_user(user)}, [("Set-Cookie", cookie)]
 
