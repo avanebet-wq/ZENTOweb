@@ -197,7 +197,7 @@ class ProductsTest(ServerTestCase):
         self.assertEqual(len(resp.body), 3)
         self.assertEqual(
             set(resp.body[0]),
-            {"id", "name", "category", "price", "description", "color", "stock"},
+            {"id", "name", "category", "price", "description", "color", "stock", "unit", "image_sha"},
         )
         self.assertEqual([p["id"] for p in resp.body], ["p1", "p2", "p3"])
 
@@ -911,3 +911,50 @@ class AdminTokenNotLoggedTest(ServerTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- редактирование товара (единица, обложка)
+
+class ProductEditTest(ServerTestCase):
+    def png(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_images import png_bytes
+        return png_bytes(20, 10)
+
+    def upload(self, raw, content_type="image/png", token=TOKEN):
+        headers = {"Content-Type": content_type}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return self.request("PUT", "/api/admin/products/p1/image", raw=raw, headers=headers)
+
+    def test_unit_defaults_to_pieces_and_rejects_unknown(self):
+        created = self.admin("POST", "/api/admin/products", body={"name": "Мёд", "category": "Еда", "price": 150})
+        self.assertEqual(created.status, 201)
+        self.assertEqual(created.body["unit"], "шт")
+        resp = self.admin("PATCH", "/api/admin/products/p1", body={"unit": "кг"})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["unit"], "кг")
+        resp = self.admin("PATCH", "/api/admin/products/p1", body={"unit": "мл"})
+        self.assertEqual(resp.status, 400)
+        self.assertIn("unit", resp.body["fields"])
+
+    def test_cover_upload_is_public_and_can_be_removed(self):
+        png = self.png()
+        self.assertEqual(self.upload(png).status, 200)
+        resp = self.request("GET", "/api/products/p1/image")
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.raw, png)
+        self.assertEqual(resp.headers.get("Content-Type"), "image/png")
+        product = next(p for p in self.request("GET", "/api/products").body if p["id"] == "p1")
+        self.assertTrue(product["image_sha"])
+        self.assertEqual(self.request("DELETE", "/api/admin/products/p1/image",
+                                      headers={"Authorization": f"Bearer {TOKEN}"}).status, 200)
+        self.assertEqual(self.request("GET", "/api/products/p1/image").status, 404)
+
+    def test_cover_upload_needs_admin_and_a_real_image(self):
+        png = self.png()
+        self.assertIn(self.upload(png, token=None).status, (401, 403))
+        self.assertEqual(self.upload(b"hello", content_type="text/plain").status, 415)
+        self.assertEqual(self.upload(b"not an image").status, 400)
+        self.assertEqual(self.upload(png).status, 200)
+

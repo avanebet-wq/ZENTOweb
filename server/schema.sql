@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS products (
     description TEXT NOT NULL DEFAULT '',
     color       TEXT NOT NULL DEFAULT '',
     stock       INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
+    unit        TEXT NOT NULL DEFAULT 'шт',
     created_at  TEXT NOT NULL
 );
 
@@ -169,4 +170,15 @@ CREATE TABLE IF NOT EXISTS nick_reservations (
     nick_lower     TEXT PRIMARY KEY,
     user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     reserved_until TEXT NOT NULL
+);
+
+-- Обложка товара: одна картинка на товар. Тип и размеры проверяет server/images.py.
+CREATE TABLE IF NOT EXISTS product_images (
+    product_id   TEXT PRIMARY KEY REFERENCES products (id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/webp')),
+    data         BLOB NOT NULL,
+    width        INTEGER NOT NULL CHECK (width > 0),
+    height       INTEGER NOT NULL CHECK (height > 0),
+    sha256       TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
 );

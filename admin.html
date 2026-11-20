@@ -158,5 +158,53 @@
   </footer>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog class="edit-dialog glass" id="edit-dialog" aria-labelledby="edit-title">
+    <form id="edit-form" class="edit-form" novalidate>
+      <h2 class="edit-title" id="edit-title">Редактирование товара</h2>
+      <div class="edit-cover">
+        <img id="ed-cover-img" alt="" width="120" height="120" hidden>
+        <p class="muted" id="ed-cover-none">Обложки нет: в магазине будет общее фото</p>
+        <div class="edit-cover-buttons">
+          <label class="btn btn-ghost btn-small press" for="ed-file">Выбрать обложку</label>
+          <input id="ed-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <button class="btn btn-ghost btn-small press" type="button" id="ed-cover-remove">Убрать обложку</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="ed-name">Название</label>
+        <input id="ed-name" required>
+      </div>
+      <div class="field">
+        <label for="ed-category">Категория</label>
+        <input id="ed-category" required>
+      </div>
+      <div class="field">
+        <label for="ed-desc">Описание</label>
+        <textarea id="ed-desc" rows="4"></textarea>
+      </div>
+      <div class="field">
+        <label for="ed-price">Цена, ₴</label>
+        <input id="ed-price" type="number" inputmode="numeric" min="0" step="1" required>
+      </div>
+      <div class="field">
+        <label for="ed-unit">Единица измерения</label>
+        <select id="ed-unit" class="status-select">
+          <option value="шт">шт</option>
+          <option value="л">л</option>
+          <option value="г">г</option>
+          <option value="кг">кг</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ed-stock">Остаток</label>
+        <input id="ed-stock" type="number" inputmode="numeric" min="0" step="1" required>
+      </div>
+      <p class="form-error" id="ed-error" role="alert" hidden></p>
+      <div class="edit-actions">
+        <button class="btn btn-ghost press" type="button" id="ed-cancel">Отмена</button>
+        <button class="btn btn-primary press" type="submit" id="ed-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

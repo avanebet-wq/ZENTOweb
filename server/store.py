@@ -52,8 +52,10 @@ MAX_SEARCH_LEN = 100
 DB_TIMEOUT_SECONDS = 10
 DB_RETRY_ATTEMPTS = 3
 
-PRODUCT_FIELDS = ("name", "category", "price", "description", "color", "stock")
-PUBLIC_PRODUCT_COLUMNS = "id, name, category, price, description, color, stock"
+PRODUCT_FIELDS = ("name", "category", "price", "description", "color", "stock", "unit")
+PRODUCT_UNITS = ("шт", "л", "г", "кг")
+PUBLIC_PRODUCT_COLUMNS = ("id, name, category, price, description, color, stock, unit,"
+    " (SELECT sha256 FROM product_images pi WHERE pi.product_id = products.id) AS image_sha")
 ADMIN_PRODUCT_COLUMNS = PUBLIC_PRODUCT_COLUMNS + ", created_at"
 
 PHONE_CHARS_RE = re.compile(r"^\+?[0-9 ()\-.]+$")
@@ -177,6 +179,7 @@ def _migrate(conn) -> None:
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
     _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''"})
+    _add_missing_columns(conn, "products", {"unit": "TEXT NOT NULL DEFAULT 'шт'"})
     _migrate_users(conn)
     # Профиль покупателя (описание и дата последней смены ника). Идемпотентно.
     _add_missing_columns(conn, "users", {
@@ -483,6 +486,12 @@ def _email(value):
     return text
 
 
+def _unit(value):
+    if value not in PRODUCT_UNITS:
+        raise ValueError("единица измерения: " + ", ".join(PRODUCT_UNITS))
+    return value
+
+
 PRODUCT_CHECKS = {
     "name": lambda v: _text(v, 1, 120),
     "category": lambda v: _text(v, 1, 60),
@@ -490,6 +499,7 @@ PRODUCT_CHECKS = {
     "stock": lambda v: _int_range(v, 0, 1_000_000),
     "description": lambda v: _text(v, 0, 2000),
     "color": _color,
+    "unit": lambda v: _unit(v),
 }
 PRODUCT_REQUIRED_ON_CREATE = ("name", "category", "price")
 
@@ -518,6 +528,7 @@ def clean_product(data, partial=False) -> dict:
         out.setdefault("description", "")
         out.setdefault("color", "")
         out.setdefault("stock", 0)
+        out.setdefault("unit", "шт")
     return out
 
 
@@ -618,12 +629,43 @@ def create_product(conn, payload) -> dict:
     product_id = new_product_id()
     with transaction(conn):
         conn.execute(
-            "INSERT INTO products (id, name, category, price, description, color, stock, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO products (id, name, category, price, description, color, stock, unit, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (product_id, data["name"], data["category"], data["price"],
-             data["description"], data["color"], data["stock"], to_iso(utc_now())),
+             data["description"], data["color"], data["stock"], data["unit"], to_iso(utc_now())),
         )
     return get_product(conn, product_id, admin=True)
+
+
+def save_product_image(conn, product_id, data, meta, now) -> None:
+    """Ставит обложку товара вместо прежней. meta — из images.inspect()."""
+    with transaction(conn):
+        if conn.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone() is None:
+            raise NotFound()
+        conn.execute(
+            "INSERT INTO product_images (product_id, content_type, data, width, height, sha256, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (product_id) DO UPDATE SET"
+            "   content_type = excluded.content_type, data = excluded.data,"
+            "   width = excluded.width, height = excluded.height,"
+            "   sha256 = excluded.sha256, updated_at = excluded.updated_at",
+            (product_id, meta["content_type"], data, meta["width"], meta["height"],
+             meta["sha256"], to_iso(now)),
+        )
+
+
+def get_product_image(conn, product_id):
+    row = conn.execute(
+        "SELECT content_type, data, sha256 FROM product_images WHERE product_id = ?", (product_id,)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def delete_product_image(conn, product_id) -> None:
+    with transaction(conn):
+        if get_product(conn, product_id) is None:
+            raise NotFound()
+        conn.execute("DELETE FROM product_images WHERE product_id = ?", (product_id,))
 
 
 def update_product(conn, product_id, payload) -> dict:

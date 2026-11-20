@@ -38,11 +38,14 @@
   var PRODUCT_PHOTO = 'assets/products/pinecones.jpg';
   var PRODUCT_PHOTO_W = 493;
   var PRODUCT_PHOTO_H = 403;
-  // Путь к картинке для любого товара; когда появятся свои фото, сюда добавится выбор по p.id
-  function productPhotoSrc() { return PRODUCT_PHOTO; }
+  // Обложка товара с сервера; если её нет — общее фото
+  function productPhotoSrc(p) {
+    if (p && p.image_sha) return '/api/products/' + encodeURIComponent(p.id) + '/image?v=' + String(p.image_sha).slice(0, 16);
+    return PRODUCT_PHOTO;
+  }
   // eager — для картинки первого экрана, остальные грузятся по мере прокрутки
   function productImgHTML(p, eager) {
-    return '<img src="' + productPhotoSrc() + '" alt="' + esc(p && p.name) + '" width="' + PRODUCT_PHOTO_W + '" height="' + PRODUCT_PHOTO_H + '"' +
+    return '<img src="' + esc(productPhotoSrc(p)) + '" alt="' + esc(p && p.name) + '" width="' + PRODUCT_PHOTO_W + '" height="' + PRODUCT_PHOTO_H + '"' +
       (eager ? ' fetchpriority="high"' : ' loading="lazy"') + ' decoding="async">';
   }
   function artHTML(p, cls) {
@@ -171,7 +174,7 @@
   function cartCount() { return cartLines().reduce(function (s, x) { return s + x.item.qty; }, 0); }
 
   function priceHTML(p) {
-    var now = '<span class="price-now">' + money(p.price) + '</span>';
+    var now = '<span class="price-now">' + money(p.price) + ' <span class="price-unit">/ ' + esc(p.unit || 'шт') + '</span></span>';
     if (num(p.old_price) > num(p.price)) return '<s class="price-old">' + money(p.old_price) + '</s>' + now;
     return now;
   }
@@ -291,7 +294,7 @@
       return '<li class="cart-item glass">' +
         artHTML(p, 'art-sm') +
         '<div class="cart-info"><p class="cart-name">' + esc(p.name) + '</p>' +
-        '<p class="cart-unit">' + money(p.price) + ' за шт.</p></div>' +
+        '<p class="cart-unit">' + money(p.price) + ' за ' + esc(p.unit || 'шт') + '.</p></div>' +
         '<div class="cart-row">' +
           '<div class="stepper">' +
             '<button class="qty-btn press" type="button" data-dec="' + id + '" aria-label="Уменьшить количество: ' + esc(p.name) + '">−</button>' +
@@ -971,6 +974,9 @@
     /* Товары */
     function isInt(s) { return /^\d+$/.test(s); }
 
+    var productsById = {};
+    var editingId = null;
+
     function productRow(p) {
       var id = esc(p.id);
       return '<tr>' +
@@ -980,13 +986,16 @@
           '<input class="num-input" id="price-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.price) + '"></td>' +
         '<td data-label="Остаток, шт."><label class="visually-hidden" for="stock-' + id + '">Остаток: ' + esc(p.name) + '</label>' +
           '<input class="num-input" id="stock-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.stock) + '"></td>' +
-        '<td class="actions"><button class="btn btn-ghost btn-small press" type="button" data-save="' + id + '">Сохранить</button></td>' +
+        '<td class="actions"><button class="btn btn-ghost btn-small press" type="button" data-edit="' + id + '">Изменить</button> ' +
+          '<button class="btn btn-ghost btn-small press" type="button" data-save="' + id + '">Сохранить</button></td>' +
         '</tr>';
     }
 
     function loadProducts() {
       return api('/api/admin/products').then(function (list) {
         list = Array.isArray(list) ? list : [];
+        productsById = {};
+        list.forEach(function (p) { productsById[p.id] = p; });
         el('products-body').innerHTML = list.length
           ? list.map(productRow).join('')
           : '<tr><td colspan="5" class="muted">Товаров пока нет</td></tr>';
@@ -994,7 +1003,62 @@
       }).catch(function (err) { onApiError(err, 'Не удалось загрузить товары'); });
     }
 
+    function coverSrc(p) {
+      return p && p.image_sha ? '/api/products/' + encodeURIComponent(p.id) + '/image?v=' + String(p.image_sha).slice(0, 16) : '';
+    }
+
+    function setCoverPreview(src) {
+      var img = el('ed-cover-img');
+      img.hidden = !src;
+      img.src = src || '';
+      el('ed-cover-none').hidden = !!src;
+      el('ed-cover-remove').hidden = !src;
+    }
+
+    function openEdit(id, opener) {
+      var p = productsById[id];
+      if (!p) return;
+      editingId = id;
+      el('ed-name').value = p.name || '';
+      el('ed-category').value = p.category || '';
+      el('ed-desc').value = p.description || '';
+      el('ed-price').value = num(p.price);
+      el('ed-stock').value = num(p.stock);
+      el('ed-unit').value = p.unit || 'шт';
+      el('ed-file').value = '';
+      el('ed-error').hidden = true;
+      setCoverPreview(coverSrc(p));
+      var d = el('edit-dialog');
+      d.opener = opener || null;
+      try { d.showModal(); } catch (err) { d.setAttribute('open', ''); }
+      el('ed-name').focus();
+    }
+
+    function closeEdit() {
+      var d = el('edit-dialog');
+      try { d.close(); } catch (err) { d.removeAttribute('open'); }
+      editingId = null;
+    }
+
+    function uploadCover(id, file) {
+      return fetch('/api/admin/products/' + encodeURIComponent(id) + '/image', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': file.type },
+        body: file
+      }).then(function (res) {
+        if (res.ok) return;
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          var msg = body && body.fields && body.fields.image ? body.fields.image : 'Не получилось загрузить обложку';
+          var err = new Error(msg);
+          err.status = res.status;
+          throw err;
+        });
+      });
+    }
+
     el('products-body').addEventListener('click', function (e) {
+      var edit = e.target.closest && e.target.closest('[data-edit]');
+      if (edit) { openEdit(edit.getAttribute('data-edit'), edit); return; }
       var btn = e.target.closest && e.target.closest('[data-save]');
       if (!btn) return;
       var id = btn.getAttribute('data-save');
@@ -1015,6 +1079,59 @@
         onApiError(err, 'Не удалось сохранить товар');
       }).then(function () {
         btn.disabled = false;
+      });
+    });
+
+    el('ed-file').addEventListener('change', function () {
+      var f = el('ed-file').files && el('ed-file').files[0];
+      if (!f) return;
+      // data: разрешён политикой картинок, blob: — нет
+      var reader = new FileReader();
+      reader.onload = function () { setCoverPreview(String(reader.result)); };
+      reader.readAsDataURL(f);
+    });
+    el('ed-cancel').addEventListener('click', closeEdit);
+    el('ed-cover-remove').addEventListener('click', function () {
+      if (!editingId) return;
+      var id = editingId;
+      api('/api/admin/products/' + encodeURIComponent(id) + '/image', { method: 'DELETE' }).then(function () {
+        el('ed-file').value = '';
+        setCoverPreview('');
+        toast('Обложка убрана');
+        return loadProducts();
+      }).catch(function (err) { onApiError(err, 'Не удалось убрать обложку'); });
+    });
+    el('edit-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!editingId) return;
+      var id = editingId;
+      var errBox = el('ed-error');
+      var name = el('ed-name').value.trim();
+      var category = el('ed-category').value.trim();
+      var price = el('ed-price').value.trim();
+      var stock = el('ed-stock').value.trim();
+      if (!name || !category) { errBox.textContent = 'Укажите название и категорию'; errBox.hidden = false; return; }
+      if (!isInt(price) || !isInt(stock)) { errBox.textContent = 'Цена и остаток — целые числа, не меньше нуля'; errBox.hidden = false; return; }
+      var file = el('ed-file').files && el('ed-file').files[0];
+      var save = el('ed-save');
+      save.disabled = true;
+      api('/api/admin/products/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        body: {
+          name: name, category: category, description: el('ed-desc').value.trim(),
+          price: Number(price), stock: Number(stock), unit: el('ed-unit').value
+        }
+      }).then(function () {
+        return file ? uploadCover(id, file) : null;
+      }).then(function () {
+        toast('Товар сохранён: ' + name);
+        closeEdit();
+        return loadProducts();
+      }).catch(function (err) {
+        errBox.textContent = err.status === 0 ? 'Нет связи с сервером' : (err.message && err.message.indexOf('HTTP') !== 0 ? err.message : 'Не получилось сохранить товар');
+        errBox.hidden = false;
+      }).then(function () {
+        save.disabled = false;
       });
     });
 
