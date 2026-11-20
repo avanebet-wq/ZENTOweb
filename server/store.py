@@ -58,11 +58,9 @@ ADMIN_PRODUCT_COLUMNS = PUBLIC_PRODUCT_COLUMNS + ", created_at"
 
 PHONE_CHARS_RE = re.compile(r"^\+?[0-9 ()\-.]+$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-# Ник: 3–20 символов, латиница, кириллица, цифры и _. Пробелов нет.
-NICK_RE = re.compile(r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ0-9_]{3,20}")
+# Ник: 3–20 символов, только английские буквы и цифры. Пробелов и знаков нет.
+NICK_RE = re.compile(r"[A-Za-z0-9]{3,20}")
 # Ник нельзя смешивать из латиницы и кириллицы: «аnna» с кириллической а выглядит как «anna».
-NICK_LATIN_RE = re.compile(r"[A-Za-z]")
-NICK_CYRILLIC_RE = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]")
 NICK_RESERVED = frozenset({"admin", "zento", "support", "bot", "administrator", "root", "moderator"})
 PUBLIC_ID_DIGITS = 10                 # публичный ID покупателя: столько цифр, с ведущими нулями
 RESET_CODE_RE = re.compile(r"[0-9]{6}")
@@ -185,9 +183,31 @@ def _migrate(conn) -> None:
         "nick_changed_at": "TEXT",
         "xp": "INTEGER NOT NULL DEFAULT 0",
     })
+    _reset_bad_nicks(conn)
     _migrate_public_ids(conn)
     seed_achievements(conn)
     _backfill_achievements(conn, utc_now())
+
+
+def _reset_bad_nicks(conn) -> None:
+    """Ники не из английских букв и цифр (русские, с символами, с _) заменяем случайными вида user123456.
+    Идемпотентно: после замены все ники подходят и функция ничего не меняет. В лог идёт id и старый/новый ник."""
+    rows = conn.execute("SELECT id, nick FROM users").fetchall()
+    bad = [row for row in rows if not NICK_RE.fullmatch(row["nick"])]
+    if not bad:
+        return
+    taken = {row["nick"].lower() for row in rows}
+    reserved = {r["nick_lower"] for r in conn.execute("SELECT nick_lower FROM nick_reservations")}
+    with transaction(conn):
+        for row in bad:
+            while True:
+                fresh = "user" + "".join(secrets.choice("0123456789") for _ in range(8))
+                if fresh not in taken and fresh not in reserved:
+                    break
+            taken.add(fresh)
+            conn.execute("UPDATE users SET nick = ?, nick_lower = ?, nick_changed_at = NULL WHERE id = ?",
+                         (fresh, fresh, row["id"]))
+            print(f"[nick-reset] user id={row['id']}: {row['nick']!r} -> {fresh}", flush=True)
 
 
 def _add_missing_columns(conn, table, definitions) -> None:
@@ -870,9 +890,7 @@ def clean_nick(value) -> str:
         raise ValueError("укажите ник")
     text = value.strip()
     if not NICK_RE.fullmatch(text):
-        raise ValueError("от 3 до 20 символов: буквы, цифры и знак _, без пробелов")
-    if NICK_LATIN_RE.search(text) and NICK_CYRILLIC_RE.search(text):
-        raise ValueError("нельзя смешивать латиницу и кириллицу в одном нике")
+        raise ValueError("от 3 до 20 символов: только английские буквы и цифры")
     if text.lower() in NICK_RESERVED:
         raise ValueError("этот ник нельзя использовать")
     return text

@@ -35,13 +35,13 @@ import mailer  # noqa: E402
 import store  # noqa: E402
 
 FORM = {
-    "nick": "Anna_Petrova",
+    "nick": "AnnaPetrova",
     "password": "Secret123",
     "password2": "Secret123",
     "agree": True,
     "email": "Anna.Petrova@Example.com",
 }
-NICK_FORMS = ["anna_petrova", "ANNA_PETROVA", "Anna_Petrova"]
+NICK_FORMS = ["annapetrova", "ANNAPETROVA", "AnnaPetrova"]
 SESSION_RE_PREFIX = "zento_session="
 BREVO_KEY = "brevo-test-key-0123456789abcdefABCDEF"
 MAIL_SENDER = "zento-sender@example.com"
@@ -138,7 +138,7 @@ class PasswordRulesTest(unittest.TestCase):
     def test_good_passwords_pass(self):
         for password in ["Secret123", "abcdefg1", "Пароль2026", "x" * 100 + "1"]:
             with self.subTest(password=password):
-                self.assertIsNone(auth.password_error(password, "anna_k"))
+                self.assertIsNone(auth.password_error(password, "annak"))
 
     def test_length_bounds(self):
         self.assertIn("короче", auth.password_error("abc1234", ""))
@@ -155,9 +155,9 @@ class PasswordRulesTest(unittest.TestCase):
         self.assertIn("простой", auth.password_error("PASSWORD1", ""))
 
     def test_password_must_not_contain_nick_in_any_case(self):
-        self.assertIn("ник", auth.password_error("Anna_K2024", "anna_k"))
-        self.assertIn("ник", auth.password_error("xxANNA_kxx1", "Anna_K"))
-        self.assertIsNone(auth.password_error("Mango2024", "anna_k"))
+        self.assertIn("ник", auth.password_error("AnnaK2024", "annak"))
+        self.assertIn("ник", auth.password_error("xxANNAkxx1", "AnnaK"))
+        self.assertIsNone(auth.password_error("Mango2024", "annak"))
 
     def test_hash_format_and_verify(self):
         stored = auth.hash_password("Secret123")
@@ -206,19 +206,19 @@ class PasswordRulesTest(unittest.TestCase):
 
 class NickAndLoginFormTest(unittest.TestCase):
     def test_valid_nicks(self):
-        for nick in ["Anna", "анна_1", "Іван77", "ЁЖИК_2026", "a_b", "x" * 20]:
+        for nick in ["Anna", "anna1", "Ivan77", "ABC2026", "x" * 20]:
             with self.subTest(nick=nick):
                 self.assertEqual(store.clean_nick(nick), nick)
 
     def test_nick_is_stripped_but_inner_spaces_refused(self):
         self.assertEqual(store.clean_nick("  Anna  "), "Anna")
-        for bad in ["ab", "x" * 21, "a b", "ник-1", "Anna!", "", "   ", None, 12345]:
+        for bad in ["ab", "x" * 21, "a b", "ник-1", "Anna!", "a_b", "анна", "", "   ", None, 12345]:
             with self.subTest(nick=bad):
                 with self.assertRaises(ValueError):
                     store.clean_nick(bad)
 
     def test_login_identity_by_nick_or_email_only(self):
-        self.assertEqual(store.login_identity("Anna_K"), ("nick", "anna_k"))
+        self.assertEqual(store.login_identity("AnnaK"), ("nick", "annak"))
         self.assertEqual(store.login_identity("Anna.K@Example.COM"), ("email", "anna.k@example.com"))
         self.assertIsNone(store.login_identity("+380671234567"))   # телефон больше не логин
         self.assertIsNone(store.login_identity("hello world"))
@@ -233,7 +233,7 @@ class RegisterTest(AuthServerBase):
         self.assertEqual(resp.status, 201, resp.body)
         self.assertEqual(resp.body, {
             "ok": True,
-            "user": {"id": resp.body["user"]["id"], "nick": "Anna_Petrova", "email": "anna.petrova@example.com"},
+            "user": {"id": resp.body["user"]["id"], "nick": "AnnaPetrova", "email": "anna.petrova@example.com"},
         })
         self.assertIsNotNone(cookie_from(resp))
 
@@ -254,8 +254,8 @@ class RegisterTest(AuthServerBase):
         resp = self.register()
         token = cookie_from(resp)
         (row,) = self.user_rows()
-        self.assertEqual(row[1], "Anna_Petrova")
-        self.assertEqual(row[2], "anna_petrova")
+        self.assertEqual(row[1], "AnnaPetrova")
+        self.assertEqual(row[2], "annapetrova")
         self.assertEqual(row[3], "anna.petrova@example.com")
         self.assertIsNone(row[4])                       # телефон при регистрации не заполняем
         self.assertTrue(row[5].startswith("scrypt$16384$8$1$"))
@@ -306,29 +306,30 @@ class RegisterTest(AuthServerBase):
                 self.assertIn("nick", resp.body["fields"])
         self.assertEqual(self.db_count("users"), 0)
 
-    def test_cyrillic_nick_is_accepted(self):
-        resp = self.register(nick="Анна_Петрова")
-        self.assertEqual(resp.status, 201, resp.body)
-        self.assertEqual(resp.body["user"]["nick"], "Анна_Петрова")
+    def test_cyrillic_and_symbol_nicks_are_refused(self):
+        for bad in ("Анна", "Anna_Petrova", "Anna-1"):
+            resp = self.register(nick=bad)
+            self.assertEqual(resp.status, 400, resp.body)
+            self.assertIn("nick", resp.body["fields"])
 
     def test_nick_taken_in_any_case_is_409_and_ticket_survives(self):
         self.assertEqual(self.register().status, 201)
         ticket = self.get_ticket()
-        resp = self.register(ticket=ticket, nick="ANNA_petrova", email="other@example.com")
+        resp = self.register(ticket=ticket, nick="ANNApetrova", email="other@example.com")
         self.assert_error(resp, 409, "nick_taken")
         self.assertEqual(set(resp.body["fields"]), {"nick"})
-        ok = self.register(ticket=ticket, nick="Anna_New", email="other@example.com")
+        ok = self.register(ticket=ticket, nick="AnnaNew", email="other@example.com")
         self.assertEqual(ok.status, 201, ok.body)
 
     def test_email_taken_in_any_case_is_409(self):
         self.assertEqual(self.register().status, 201)
-        resp = self.register(nick="Other_Nick", email="ANNA.PETROVA@example.COM")
+        resp = self.register(nick="OtherNick", email="ANNA.PETROVA@example.COM")
         self.assert_error(resp, 409, "email_taken")
         self.assertEqual(set(resp.body["fields"]), {"email"})
 
     def test_both_taken_reports_both_fields(self):
         self.assertEqual(self.register().status, 201)
-        resp = self.register(nick="anna_petrova", email="anna.petrova@example.com")
+        resp = self.register(nick="annapetrova", email="anna.petrova@example.com")
         self.assert_error(resp, 409, "nick_taken")
         self.assertEqual(set(resp.body["fields"]), {"nick", "email"})
 
@@ -344,7 +345,7 @@ class RegisterTest(AuthServerBase):
             "no_digit": "password",
             "no_letter": "12345678901",
             "common": "qwerty123",
-            "contains_nick": "Anna_Petrova1",
+            "contains_nick": "AnnaPetrova1",
         }
         for label, password in cases.items():
             with self.subTest(case=label):
@@ -392,7 +393,7 @@ class RegisterTest(AuthServerBase):
     def test_used_ticket_is_rejected(self):
         ticket = self.get_ticket()
         self.assertEqual(self.register(ticket=ticket).status, 201)
-        resp = self.register(ticket=ticket, nick="Second_User", email="second@example.com")
+        resp = self.register(ticket=ticket, nick="SecondUser", email="second@example.com")
         self.assert_error(resp, 403, "captcha_required")
 
     def test_expired_ticket_is_rejected(self):
@@ -404,7 +405,7 @@ class RegisterTest(AuthServerBase):
 
     def test_captcha_is_checked_before_taken_names(self):
         self.assertEqual(self.register().status, 201)
-        resp = self.register(ticket="bad-ticket-0000000000000000000000000000000", nick="anna_petrova")
+        resp = self.register(ticket="bad-ticket-0000000000000000000000000000000", nick="annapetrova")
         self.assert_error(resp, 403, "captcha_required")
 
     def test_non_json_content_type_is_415(self):
@@ -421,9 +422,9 @@ class RegisterTest(AuthServerBase):
 
     def test_register_limit_returns_429_with_retry_after(self):
         self.start_server(admin_token=TOKEN, db_name="reg-limit.db", auth_limits={"register": (2, 3600)})
-        self.assertEqual(self.register(nick="user_one", email="a1@example.com").status, 201)
-        self.assertEqual(self.register(nick="user_two", email="a2@example.com").status, 201)
-        resp = self.register(nick="user_three", email="a3@example.com")
+        self.assertEqual(self.register(nick="userone", email="a1@example.com").status, 201)
+        self.assertEqual(self.register(nick="usertwo", email="a2@example.com").status, 201)
+        resp = self.register(nick="userthree", email="a3@example.com")
         self.assert_error(resp, 429, "too_many_requests")
         self.assertGreaterEqual(int(resp.headers["Retry-After"]), 1)
 
@@ -439,7 +440,7 @@ class LoginTest(AuthServerBase):
         resp = self.login("ANNA.Petrova@example.com")
         self.assertEqual(resp.status, 200, resp.body)
         self.assertEqual(resp.body["user"], {
-            "id": resp.body["user"]["id"], "nick": "Anna_Petrova", "email": "anna.petrova@example.com",
+            "id": resp.body["user"]["id"], "nick": "AnnaPetrova", "email": "anna.petrova@example.com",
         })
         self.assertIsNotNone(cookie_from(resp))
 
@@ -448,12 +449,12 @@ class LoginTest(AuthServerBase):
             with self.subTest(nick=nick):
                 resp = self.login(nick)
                 self.assertEqual(resp.status, 200, resp.body)
-                self.assertEqual(resp.body["user"]["nick"], "Anna_Petrova")
+                self.assertEqual(resp.body["user"]["nick"], "AnnaPetrova")
 
     def test_login_by_phone_is_no_longer_accepted(self):
         resp = self.login("+380 67 123 45 67")
         self.assert_error(resp, 401, "invalid_credentials")
-        self.assertEqual(resp.body, self.login("nobody_here_123").body)
+        self.assertEqual(resp.body, self.login("nobodyhere123").body)
 
     def test_wrong_password_is_401(self):
         resp = self.login("anna.petrova@example.com", "Wrong12345")
@@ -462,9 +463,9 @@ class LoginTest(AuthServerBase):
 
     def test_wrong_password_and_unknown_login_give_same_answer(self):
         wrong_password = self.login("anna.petrova@example.com", "Wrong12345").body
-        wrong_nick_password = self.login("Anna_Petrova", "Wrong12345").body
+        wrong_nick_password = self.login("AnnaPetrova", "Wrong12345").body
         unknown_email = self.login("nobody@example.com").body
-        unknown_nick = self.login("ghost_user").body
+        unknown_nick = self.login("ghostuser").body
         malformed = self.login("+7 912 345 67 89").body
         self.assertEqual(wrong_password, wrong_nick_password)
         self.assertEqual(wrong_password, unknown_email)
@@ -478,7 +479,7 @@ class LoginTest(AuthServerBase):
         resp = self.request("POST", "/api/auth/login", body={"password": "x"})
         self.assert_error(resp, 400, "validation_error")
         self.assertIn("login", resp.body["fields"])
-        resp = self.request("POST", "/api/auth/login", body={"login": "Anna_Petrova", "password": ""})
+        resp = self.request("POST", "/api/auth/login", body={"login": "AnnaPetrova", "password": ""})
         self.assertIn("password", resp.body["fields"])
 
     def test_cookie_attributes(self):
@@ -494,7 +495,7 @@ class LoginTest(AuthServerBase):
         with mock.patch.dict(os.environ, {"COOKIE_SECURE": "0"}):
             self.start_server(admin_token=TOKEN, db_name="insecure.db")
         self.assertEqual(self.register().status, 201)
-        cookie_line = self.login("Anna_Petrova").headers.get_all("Set-Cookie")[0]
+        cookie_line = self.login("AnnaPetrova").headers.get_all("Set-Cookie")[0]
         self.assertNotIn("Secure", cookie_line)
         self.assertIn("HttpOnly", cookie_line)
 
@@ -503,7 +504,7 @@ class LoginTest(AuthServerBase):
         token = cookie_from(self.login("anna.petrova@example.com"))
         body = self.me(token)
         self.assertEqual(set(body["user"]), {"id", "nick", "email"})
-        self.assertEqual(body["user"]["nick"], "Anna_Petrova")
+        self.assertEqual(body["user"]["nick"], "AnnaPetrova")
         self.assertEqual(body["user"]["email"], "anna.petrova@example.com")
         self.assertEqual(self.me("x" * 43), {"ok": True, "user": None})
 
@@ -565,7 +566,7 @@ class LoginTest(AuthServerBase):
                           auth_limits={"login_key": (2, 900), "login_ip": (100, 900)})
         self.assertEqual(self.register().status, 201)
         self.assert_error(self.login("anna.petrova@example.com", "Wrong12345"), 401, "invalid_credentials")
-        self.assert_error(self.login("ANNA_petrova", "Wrong12345"), 401, "invalid_credentials")
+        self.assert_error(self.login("ANNApetrova", "Wrong12345"), 401, "invalid_credentials")
         resp = self.login("anna.petrova@example.com")   # верный пароль, но лимит по аккаунту исчерпан
         self.assert_error(resp, 429, "too_many_attempts")
         self.assertGreaterEqual(int(resp.headers["Retry-After"]), 1)
@@ -576,7 +577,7 @@ class LoginTest(AuthServerBase):
         self.assertEqual(self.register().status, 201)
         self.assert_error(self.login("a@example.com", "Wrong12345"), 401, "invalid_credentials")
         self.assert_error(self.login("someone_else", "Wrong12345"), 401, "invalid_credentials")
-        self.assert_error(self.login("Anna_Petrova"), 429, "too_many_attempts")
+        self.assert_error(self.login("AnnaPetrova"), 429, "too_many_attempts")
 
     def test_successful_logins_do_not_count_toward_limit(self):
         self.start_server(admin_token=TOKEN, db_name="login-ok.db",
@@ -632,7 +633,7 @@ class SessionLifecycleTest(AuthServerBase):
     def test_many_users_each_get_own_session(self):
         tokens = []
         for index in range(3):
-            resp = self.register(nick=f"user_{index}", email=f"user{index}@example.com")
+            resp = self.register(nick=f"user{index}", email=f"user{index}@example.com")
             self.assertEqual(resp.status, 201, resp.body)
             tokens.append(cookie_from(resp))
         self.assertEqual(len(set(tokens)), 3)
@@ -765,17 +766,17 @@ class ResetTest(AuthServerBase):
 
     # --- запрос кода
     def test_unknown_accounts_get_the_same_answer_and_no_mail(self):
-        answers = [self.ask("nobody_here_1").body, self.ask("nobody@example.com").body,
+        answers = [self.ask("nobodyhere1").body, self.ask("nobody@example.com").body,
                    self.ask("hello world").body, self.ask("+380671234567").body]
         for answer in answers:
             self.assertEqual(answer, {"ok": True, "message": "Если аккаунт найден, код отправлен на почту"})
-        self.assertEqual(self.ask("nobody_here_1").status, 200)
+        self.assertEqual(self.ask("nobodyhere1").status, 200)
         self.send.assert_not_called()
 
     def test_existing_account_gets_same_answer_and_mail_with_code(self):
-        found = self.ask("Anna_Petrova")
+        found = self.ask("AnnaPetrova")
         self.assertEqual(found.status, 200)
-        self.assertEqual(found.body, self.ask("nobody_here_1").body)
+        self.assertEqual(found.body, self.ask("nobodyhere1").body)
         self.send.assert_called_once()
         to, code = self.send.call_args[0]
         self.assertEqual(to, "anna.petrova@example.com")
@@ -786,40 +787,40 @@ class ResetTest(AuthServerBase):
         self.send.assert_called_once()
 
     def test_code_is_stored_only_as_hash(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         code = self.sent_code()
         (row,) = self.reset_rows()
         self.assertNotEqual(row[1], code)
         self.assertTrue(row[1].startswith("scrypt$"))
         self.assertNotIn(code, row[1])
-        resp = self.ask("anna_petrova")
+        resp = self.ask("annapetrova")
         self.assertNotIn(code.encode(), resp.raw)
 
     def test_account_without_email_gets_same_answer_and_no_mail(self):
-        self.assertEqual(self.register(nick="No_Mail_User", email=None).status, 201)
-        self.assertEqual(self.ask("No_Mail_User").body, self.ask("nobody_here_1").body)
+        self.assertEqual(self.register(nick="NoMailUser", email=None).status, 201)
+        self.assertEqual(self.ask("NoMailUser").body, self.ask("nobodyhere1").body)
         self.send.assert_not_called()
 
     def test_second_request_within_a_minute_sends_nothing(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         first_code = self.sent_code()
-        again = self.ask("anna_petrova")
+        again = self.ask("annapetrova")
         self.assertEqual(again.status, 200)
         self.assertEqual(again.body["message"], "Если аккаунт найден, код отправлен на почту")
         self.assertEqual(self.send.call_count, 1)
         # Первый код остаётся действующим.
-        self.assertEqual(self.confirm("anna_petrova", first_code).status, 200)
+        self.assertEqual(self.confirm("annapetrova", first_code).status, 200)
 
     def test_request_after_a_minute_sends_new_code_and_old_stops_working(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         old_code = self.sent_code()
         self.db_set("UPDATE reset_codes SET created_at = ?", (test_api.minutes_ago(2),))
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         self.assertEqual(self.send.call_count, 2)
         new_code = self.sent_code()
         if new_code != old_code:
-            self.assert_error(self.confirm("anna_petrova", old_code), 400, "code_invalid")
-        self.assertEqual(self.confirm("anna_petrova", new_code).status, 200)
+            self.assert_error(self.confirm("annapetrova", old_code), 400, "code_invalid")
+        self.assertEqual(self.confirm("annapetrova", new_code).status, 200)
 
     def test_missing_login_is_validation_error(self):
         resp = self.request("POST", "/api/auth/reset/request", body={})
@@ -833,9 +834,9 @@ class ResetTest(AuthServerBase):
 
     def test_request_limit_returns_429(self):
         self.start_server(admin_token=TOKEN, db_name="reset-limit.db", auth_limits={"reset_request": (2, 900)})
-        self.assertEqual(self.ask("anna_petrova").status, 200)
-        self.assertEqual(self.ask("nobody_here_1").status, 200)
-        resp = self.ask("anna_petrova")
+        self.assertEqual(self.ask("annapetrova").status, 200)
+        self.assertEqual(self.ask("nobodyhere1").status, 200)
+        resp = self.ask("annapetrova")
         self.assert_error(resp, 429, "too_many_requests")
         self.assertGreaterEqual(int(resp.headers["Retry-After"]), 1)
 
@@ -844,8 +845,8 @@ class ResetTest(AuthServerBase):
 
     def test_mail_not_configured_is_503_for_everyone(self):
         with mock.patch.dict(os.environ, NO_MAIL_ENV):
-            existing = self.ask("anna_petrova")
-            unknown = self.ask("nobody_here_1")
+            existing = self.ask("annapetrova")
+            unknown = self.ask("nobodyhere1")
         self.assert_error(existing, 503, "mail_failed")
         self.assertEqual(existing.body, unknown.body)
         self.send.assert_not_called()
@@ -854,18 +855,18 @@ class ResetTest(AuthServerBase):
     def test_brevo_failure_answers_like_unknown_account(self):
         # Сбой Brevo не выдаёт, что аккаунт есть: ответ тот же, что для несуществующего логина.
         self.send.side_effect = mailer.MailError("почта недоступна")
-        failed = self.ask("anna_petrova")
+        failed = self.ask("annapetrova")
         self.assertEqual(failed.status, 200)
-        self.assertEqual(failed.body, self.ask("nobody_here_1").body)
+        self.assertEqual(failed.body, self.ask("nobodyhere1").body)
         self.assertEqual(self.reset_rows(), [])          # неотправленный код гасится
         self.send.side_effect = None
-        self.assertEqual(self.ask("anna_petrova").status, 200)
+        self.assertEqual(self.ask("annapetrova").status, 200)
         self.assertEqual(self.send.call_count, 2)        # повторить можно сразу
 
     def test_brevo_failure_gives_same_answer_for_every_login(self):
         self.send.side_effect = mailer.MailError("почта недоступна")
-        answers = {self.ask(login).raw for login in ["anna_petrova", "anna.petrova@example.com",
-                                                     "nobody_here_1", "nobody@example.com", "hello world"]}
+        answers = {self.ask(login).raw for login in ["annapetrova", "anna.petrova@example.com",
+                                                     "nobodyhere1", "nobody@example.com", "hello world"]}
         self.assertEqual(len(answers), 1)
 
     def test_brevo_failure_does_not_leak_key_or_address_into_answer_or_logs(self):
@@ -875,9 +876,9 @@ class ResetTest(AuthServerBase):
         failing = urllib.error.HTTPError("https://api.brevo.com/v3/smtp/email", 401, "Unauthorized", {}, None)
         with mock.patch.dict(os.environ, MAIL_ENV), mock.patch("urllib.request.urlopen", side_effect=failing):
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                resp = self.ask("anna_petrova")
+                resp = self.ask("annapetrova")
         self.assertEqual(resp.status, 200)
-        self.assertEqual(resp.body, self.ask("nobody_here_1").body)
+        self.assertEqual(resp.body, self.ask("nobodyhere1").body)
         text = resp.raw.decode("utf-8") + out.getvalue() + err.getvalue()
         self.assertNotIn(BREVO_KEY, text)
         self.assertNotIn("anna.petrova@example.com", text)
@@ -885,46 +886,46 @@ class ResetTest(AuthServerBase):
 
     # --- подтверждение
     def test_correct_code_sets_new_password_and_logs_in(self):
-        self.ask("anna_petrova")
-        resp = self.confirm("anna_petrova", self.sent_code())
+        self.ask("annapetrova")
+        resp = self.confirm("annapetrova", self.sent_code())
         self.assertEqual(resp.status, 200, resp.body)
-        self.assertEqual(resp.body["user"]["nick"], "Anna_Petrova")
+        self.assertEqual(resp.body["user"]["nick"], "AnnaPetrova")
         self.assertIsNotNone(cookie_from(resp))
-        self.assertTrue(self.login_works("Anna_Petrova", "Newpass456"))
-        self.assertFalse(self.login_works("Anna_Petrova", "Secret123"))
+        self.assertTrue(self.login_works("AnnaPetrova", "Newpass456"))
+        self.assertFalse(self.login_works("AnnaPetrova", "Secret123"))
 
     def test_login_after_reset_by_email_works_too(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         self.assertEqual(self.confirm("anna.petrova@example.com", self.sent_code()).status, 200)
         self.assertTrue(self.login_works("anna.petrova@example.com", "Newpass456"))
 
     def test_used_code_cannot_be_reused(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         code = self.sent_code()
-        self.assertEqual(self.confirm("anna_petrova", code).status, 200)
-        self.assert_error(self.confirm("anna_petrova", code, password="Another789"), 400, "code_invalid")
+        self.assertEqual(self.confirm("annapetrova", code).status, 200)
+        self.assert_error(self.confirm("annapetrova", code, password="Another789"), 400, "code_invalid")
 
     def test_wrong_code_is_code_invalid(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         wrong = "000000" if self.sent_code() != "000000" else "111111"
-        resp = self.confirm("anna_petrova", wrong)
+        resp = self.confirm("annapetrova", wrong)
         self.assert_error(resp, 400, "code_invalid")
         self.assertEqual(self.reset_rows()[0][2], 1)
 
     def test_unknown_login_gives_same_answer_as_wrong_code(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         wrong = "000000" if self.sent_code() != "000000" else "111111"
-        self.assertEqual(self.confirm("nobody_here_1", wrong).body, self.confirm("anna_petrova", wrong).body)
+        self.assertEqual(self.confirm("nobodyhere1", wrong).body, self.confirm("annapetrova", wrong).body)
 
     def test_expired_code_is_code_expired(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         code = self.sent_code()
         self.db_set("UPDATE reset_codes SET expires_at = ?", (test_api.minutes_ago(1),))
-        self.assert_error(self.confirm("anna_petrova", code), 400, "code_expired")
-        self.assertFalse(self.login_works("Anna_Petrova", "Newpass456"))
+        self.assert_error(self.confirm("annapetrova", code), 400, "code_expired")
+        self.assertFalse(self.login_works("AnnaPetrova", "Newpass456"))
 
     def test_code_lives_ten_minutes(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         (row,) = self.reset_rows()
         conn = self.db()
         try:
@@ -934,63 +935,63 @@ class ResetTest(AuthServerBase):
         self.assertEqual(store.parse_iso(expires) - store.parse_iso(created), timedelta(minutes=10))
 
     def test_five_wrong_tries_burn_the_code(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         code = self.sent_code()
         wrong = "000000" if code != "000000" else "111111"
         for _ in range(5):
-            self.assert_error(self.confirm("anna_petrova", wrong), 400, "code_invalid")
+            self.assert_error(self.confirm("annapetrova", wrong), 400, "code_invalid")
         # Шестая попытка — даже с правильным кодом — отказ, и код сгорает.
-        self.assert_error(self.confirm("anna_petrova", code), 429, "code_attempts_exceeded")
-        self.assert_error(self.confirm("anna_petrova", code), 400, "code_invalid")
-        self.assertFalse(self.login_works("Anna_Petrova", "Newpass456"))
-        self.assertTrue(self.login_works("Anna_Petrova", "Secret123"))
+        self.assert_error(self.confirm("annapetrova", code), 429, "code_attempts_exceeded")
+        self.assert_error(self.confirm("annapetrova", code), 400, "code_invalid")
+        self.assertFalse(self.login_works("AnnaPetrova", "Newpass456"))
+        self.assertTrue(self.login_works("AnnaPetrova", "Secret123"))
 
     def test_new_code_after_burn_works(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         code = self.sent_code()
         wrong = "000000" if code != "000000" else "111111"
         for _ in range(6):
-            self.confirm("anna_petrova", wrong)
+            self.confirm("annapetrova", wrong)
         self.db_set("UPDATE reset_codes SET created_at = ?", (test_api.minutes_ago(2),))
-        self.ask("anna_petrova")
-        self.assertEqual(self.confirm("anna_petrova", self.sent_code()).status, 200)
+        self.ask("annapetrova")
+        self.assertEqual(self.confirm("annapetrova", self.sent_code()).status, 200)
 
     def test_five_wrong_tries_counted_even_with_good_password_form(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         wrong = "000000" if self.sent_code() != "000000" else "111111"
         for _ in range(5):
-            self.confirm("anna_petrova", wrong, password="Newpass456")
-        resp = self.confirm("anna_petrova", self.sent_code(), password="Newpass456")
+            self.confirm("annapetrova", wrong, password="Newpass456")
+        resp = self.confirm("annapetrova", self.sent_code(), password="Newpass456")
         self.assert_error(resp, 429, "code_attempts_exceeded")
 
     def test_bad_password_does_not_burn_the_code(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         code = self.sent_code()
-        resp = self.confirm("anna_petrova", code, password="Anna_Petrova1")
+        resp = self.confirm("annapetrova", code, password="AnnaPetrova1")
         self.assert_error(resp, 400, "validation_error")
         self.assertIn("password", resp.body["fields"])
-        resp = self.confirm("anna_petrova", code, password="Newpass456", password2="Other4567")
+        resp = self.confirm("annapetrova", code, password="Newpass456", password2="Other4567")
         self.assert_error(resp, 400, "validation_error")
         self.assertEqual(set(resp.body["fields"]), {"password2"})
         self.assertEqual(self.reset_rows()[0][2], 0)
-        self.assertEqual(self.confirm("anna_petrova", code).status, 200)
+        self.assertEqual(self.confirm("annapetrova", code).status, 200)
 
     def test_bad_code_shape_is_validation_error_and_not_counted(self):
-        self.ask("anna_petrova")
+        self.ask("annapetrova")
         for bad in ["12345", "abcdef", "1234567", "", None]:
             with self.subTest(code=bad):
-                body = {"login": "anna_petrova", "code": bad, "password": "Newpass456", "password2": "Newpass456"}
+                body = {"login": "annapetrova", "code": bad, "password": "Newpass456", "password2": "Newpass456"}
                 resp = self.request("POST", "/api/auth/reset/confirm", body=body)
                 self.assert_error(resp, 400, "validation_error")
                 self.assertIn("code", resp.body["fields"])
         self.assertEqual(self.reset_rows()[0][2], 0)
 
     def test_old_sessions_are_removed_after_reset(self):
-        old_token = cookie_from(self.login("Anna_Petrova"))
+        old_token = cookie_from(self.login("AnnaPetrova"))
         other_token = cookie_from(self.login("anna.petrova@example.com"))
         self.assertIsNotNone(old_token)
-        self.ask("anna_petrova")
-        self.assertEqual(self.confirm("anna_petrova", self.sent_code()).status, 200)
+        self.ask("annapetrova")
+        self.assertEqual(self.confirm("annapetrova", self.sent_code()).status, 200)
         self.assertEqual(self.me(old_token), {"ok": True, "user": None})
         self.assertEqual(self.me(other_token), {"ok": True, "user": None})
         conn = self.db()
@@ -1001,10 +1002,10 @@ class ResetTest(AuthServerBase):
         self.assertEqual(count, 1)   # осталась только сессия, открытая после смены пароля
 
     def test_new_session_after_reset_is_valid(self):
-        self.ask("anna_petrova")
-        resp = self.confirm("anna_petrova", self.sent_code())
+        self.ask("annapetrova")
+        resp = self.confirm("annapetrova", self.sent_code())
         token = cookie_from(resp)
-        self.assertEqual(self.me(token)["user"]["nick"], "Anna_Petrova")
+        self.assertEqual(self.me(token)["user"]["nick"], "AnnaPetrova")
 
     def test_confirm_needs_json(self):
         resp = self.request("POST", "/api/auth/reset/confirm", raw=b"x", headers={"Content-Type": "text/plain"})

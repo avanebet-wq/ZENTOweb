@@ -67,24 +67,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Полоса опыта до следующего ранга */
-.rank-progress { width: min(280px, 72vw); margin: 12px auto 0; }
-.rank-bar {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--fill);
-  overflow: hidden;
-}
-.rank-fill {
-  display: block;
-  height: 100%;
-  width: 0;
-  border-radius: 999px;
-  background: var(--tint);
-  transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.4s;
-}
-.rank-caption { margin: 6px 0 0; font-size: 13px; color: var(--label-2); font-variant-numeric: tabular-nums; }
-
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .rank-badge { background: #1C1D2A; }
 }
@@ -92,6 +74,6 @@
   .rank-badge { background: #1C1D2A; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .greet-rank, .rank-fill { transition: none; }
+  .greet-rank { transition: none; }
   .greet-rank { transform: none; }
 }

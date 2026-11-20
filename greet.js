@@ -1,5 +1,5 @@
 /* ZENTO: приветствие на главной. «Привет» из пикселей превращается в «Hello» и обратно,
-   рядом ник с «!», ниже «Вы, <ранг>» и полоса опыта.
+   рядом ник с «!», ниже «Вы, <ранг>».
    Слушает zento:session (auth.js) и zento:user-updated (profile.js). Данные: GET /api/profile/me.
    Без внешних библиотек, без inline-скриптов. */
 (function () {
@@ -15,9 +15,6 @@
     badge: document.getElementById('rank-badge'),
     lvl: document.getElementById('rank-lvl'),
     rankName: document.getElementById('rank-name'),
-    bar: document.getElementById('rank-bar'),
-    fill: document.getElementById('rank-fill'),
-    caption: document.getElementById('rank-caption'),
     line: root.querySelector('.greet-line')
   };
   var ctx = canvas.getContext('2d');
@@ -41,18 +38,6 @@
     els.badge.setAttribute('data-tier', String(tierOf(rank.level)));
     els.lvl.textContent = String(rank.level);
     els.rankName.textContent = rank.name;
-    var last = rank.next_at == null;
-    var span = last ? 1 : rank.next_at - rank.floor;
-    var pct = last ? 100 : Math.max(0, Math.min(100, Math.round((rank.xp - rank.floor) * 100 / span)));
-    els.bar.setAttribute('aria-valuenow', String(pct));
-    els.caption.textContent = last
-      ? 'Высший ранг, ' + rank.xp + ' XP'
-      : 'Уровень ' + rank.level + ' из ' + rank.max_level + ' · ' + (rank.xp - rank.floor) + ' из ' + span + ' XP';
-    // Полоса растёт от нуля: сначала ширина 0, на следующем кадре нужная
-    els.fill.style.width = '0';
-    window.requestAnimationFrame(function () {
-      window.requestAnimationFrame(function () { els.fill.style.width = pct + '%'; });
-    });
   }
 
   function paintName(nick) {
