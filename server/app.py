@@ -410,6 +410,23 @@ def _order_create(handler, params, query):
     return 201, _run(handler, store.create_order, payload, user_id)
 
 
+def _require_bot_or_admin(handler):
+    if handler._role() not in ("bot", "admin"):
+        raise ApiError(401, {"error": "unauthorized"})
+
+
+def _bot_orders(handler, params, query):
+    """GET /api/bot/orders: новые заказы, о которых бот ещё не сообщил владельцу (токен бота или админа)."""
+    _require_bot_or_admin(handler)
+    return 200, _run(handler, store.list_unnotified_orders)
+
+
+def _bot_order_notified(handler, params, query):
+    """POST /api/bot/orders/{id}/notified: бот отметил, что владельцу написал."""
+    _require_bot_or_admin(handler)
+    return 200, _run(handler, store.mark_order_notified, _admin_number(params["id"]))
+
+
 def _my_orders(handler, params, query):
     """GET /api/my/orders: заказы вошедшего покупателя."""
     user = _session_user(handler, "Войдите, чтобы посмотреть заказы")
@@ -884,6 +901,8 @@ ROUTES = [
     ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)/image$"), _product_image_get),
     ("POST", re.compile(r"^/api/orders$"), _order_create),
     ("GET", re.compile(r"^/api/my/orders$"), _my_orders),
+    ("GET", re.compile(r"^/api/bot/orders$"), _bot_orders),
+    ("POST", re.compile(r"^/api/bot/orders/(?P<id>[^/]+)/notified$"), _bot_order_notified),
     ("POST", re.compile(r"^/api/events$"), _event_create),
     ("GET", re.compile(r"^/api/admin/stats$"), _admin_stats),
     ("GET", re.compile(r"^/api/admin/orders$"), _admin_orders),

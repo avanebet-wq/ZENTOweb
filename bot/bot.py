@@ -7,6 +7,8 @@
   BOT_TOKEN        токен от @BotFather (обязательно)
   SHOP_API_URL     адрес сайта, например https://zentoweb-production.up.railway.app (обязательно)
   SHOP_BOT_TOKEN   токен бота для API магазина (необязательно; у него нет прав админа)
+  OWNER_CHAT_ID    ID чата владельца: туда бот пишет о новых заказах (необязательно).
+                   Узнать его можно командой /id в чате с ботом.
 
 Токены никогда не печатаются в лог и не попадают в ответы бота.
 """
@@ -21,7 +23,7 @@ import urllib.parse
 import urllib.request
 
 TELEGRAM_API = "https://api.telegram.org"
-POLL_TIMEOUT = 25        # секунд: Telegram держит запрос, пока нет новых сообщений
+POLL_TIMEOUT = 10        # секунд: Telegram держит запрос, пока нет новых сообщений
 HTTP_TIMEOUT = 35        # больше POLL_TIMEOUT, чтобы не оборвать ожидание
 RETRY_DELAY = 5          # пауза после ошибки связи, секунд
 MESSAGE_LIMIT = 3500     # Telegram не принимает сообщения длиннее 4096 символов
@@ -30,7 +32,8 @@ MAX_CATALOG_ITEMS = 300
 HELP_TEXT = (
     "Здравствуйте! Это магазин ZENTO.\n\n"
     "/catalog — все товары и цены\n"
-    "/categories — категории товаров\n\n"
+    "/categories — категории товаров\n"
+    "/id — узнать ID этого чата\n\n"
     "Заказы через бота пока не оформляются: оформите заказ на сайте."
 )
 UNAVAILABLE_TEXT = "Магазин временно недоступен. Попробуйте чуть позже."
@@ -60,7 +63,11 @@ def load_config(env) -> dict:
         raise ConfigError("BOT_TOKEN не задан")
     if not shop_url.startswith(("https://", "http://")):
         raise ConfigError("SHOP_API_URL должен начинаться с https://")
-    return {"bot_token": token, "shop_url": shop_url, "shop_token": shop_token or None}
+    owner = env.get("OWNER_CHAT_ID", "").strip()
+    if owner and not owner.lstrip("-").isdigit():
+        raise ConfigError("OWNER_CHAT_ID должен быть числом")
+    return {"bot_token": token, "shop_url": shop_url, "shop_token": shop_token or None,
+            "owner_chat_id": owner or None}
 
 
 # ---------------------------------------------------------------- тексты ответов
@@ -108,6 +115,20 @@ def categories_text(products) -> str:
     return "Категории ZENTO:\n" + "\n".join(lines)
 
 
+def order_message(order: dict, shop_url: str = "") -> str:
+    """Текст для владельца о новом заказе."""
+    lines = [f"Новый заказ № {order['id']}", f"Сумма: {format_price(order['total'])}"]
+    lines.append(f"Получатель: {order.get('customer_name', '')}, {order.get('customer_phone', '')}")
+    lines.append(f"Адрес: {order.get('address', '')}")
+    items = order.get("items") or []
+    if items:
+        lines.append("Товары:")
+        lines.extend(f"— {item['name']} × {item['qty']} {item.get('unit') or 'шт'}" for item in items)
+    if shop_url:
+        lines.append(f"Подтвердить и отправить: {shop_url}/admin.html")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------- связь с Telegram и с сайтом
 
 class Telegram:
@@ -151,6 +172,28 @@ class Shop:
             raise ShopError("неожиданный ответ магазина")
         return data
 
+    def _headers(self) -> dict:
+        headers = {"Accept": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
+
+    def new_orders(self) -> list:
+        """Новые заказы, о которых владельцу ещё не писали."""
+        request = urllib.request.Request(self.base + "/api/bot/orders", headers=self._headers())
+        with self.opener(request, timeout=HTTP_TIMEOUT) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        if not isinstance(data, list):
+            raise ShopError("неожиданный ответ магазина")
+        return data
+
+    def mark_notified(self, order_id) -> None:
+        request = urllib.request.Request(
+            f"{self.base}/api/bot/orders/{int(order_id)}/notified",
+            data=b"", headers=self._headers(), method="POST")
+        with self.opener(request, timeout=HTTP_TIMEOUT) as response:
+            response.read()
+
 
 # ---------------------------------------------------------------- обработка сообщений
 
@@ -171,11 +214,24 @@ def reply_for(text: str, shop: Shop) -> list[str]:
     return [HELP_TEXT]
 
 
+def notify_orders(telegram, shop, owner_chat_id, shop_url="") -> int:
+    """Пишет владельцу о каждом новом заказе и отмечает его на сайте. Возвращает число уведомлений."""
+    sent = 0
+    for order in shop.new_orders():
+        telegram.send(owner_chat_id, order_message(order, shop_url))
+        shop.mark_notified(order["id"])
+        sent += 1
+    return sent
+
+
 def handle_update(update: dict, telegram: Telegram, shop: Shop) -> bool:
     message = update.get("message") or {}
     chat_id = (message.get("chat") or {}).get("id")
     if chat_id is None:
         return False
+    if command_of(message.get("text") or "") == "/id":
+        telegram.send(chat_id, f"ID этого чата: {chat_id}")
+        return True
     try:
         replies = reply_for(message.get("text") or "", shop)
     except (OSError, ValueError, ShopError):
@@ -191,8 +247,14 @@ def run(config, telegram=None, shop=None, sleep=time.sleep, max_loops=None):
     shop = shop or Shop(config["shop_url"], config["shop_token"])
     offset = None
     loops = 0
+    owner = config.get("owner_chat_id")
     while max_loops is None or loops < max_loops:
         loops += 1
+        if owner:
+            try:
+                notify_orders(telegram, shop, owner, config.get("shop_url", ""))
+            except (OSError, ValueError, ShopError, TelegramError) as exc:
+                log(f"Не удалось сообщить о заказах ({type(exc).__name__})")
         try:
             updates = telegram.get_updates(offset)
         except (OSError, ValueError, TelegramError) as exc:

@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS orders (
     address     TEXT NOT NULL DEFAULT '',
     tracking    TEXT NOT NULL DEFAULT '',
     user_id     INTEGER REFERENCES users (id),
+    notified    INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT NOT NULL
 );
 

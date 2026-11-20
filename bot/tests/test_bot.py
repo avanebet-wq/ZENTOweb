@@ -215,5 +215,63 @@ class RunLoopTest(unittest.TestCase):
         self.assertNotIn(FAKE_TOKEN, output.getvalue())
 
 
+
+class OwnerNotificationTest(unittest.TestCase):
+    ORDER = {"id": 7, "total": 1240, "customer_name": "Анна Петрова", "customer_phone": "+380991112233",
+             "address": "Новая почта, поштомат № 12345, Киев",
+             "items": [{"name": "Кофе", "qty": 2, "unit": "кг", "price": 890}]}
+
+    class Shop:
+        def __init__(self, orders):
+            self.orders = list(orders)
+            self.marked = []
+
+        def new_orders(self):
+            return list(self.orders)
+
+        def mark_notified(self, order_id):
+            self.marked.append(order_id)
+
+    def test_message_has_order_details(self):
+        text = bot.order_message(self.ORDER, "https://shop.example")
+        for part in ("№ 7", "1 240 ₴", "Анна Петрова", "+380991112233", "поштомат № 12345", "Кофе × 2 кг",
+                     "https://shop.example/admin.html"):
+            self.assertIn(part, text)
+
+    def test_notify_sends_and_marks(self):
+        telegram, shop = FakeTelegram(), self.Shop([self.ORDER])
+        self.assertEqual(bot.notify_orders(telegram, shop, "555", "https://shop.example"), 1)
+        self.assertEqual(telegram.sent[0][0], "555")
+        self.assertEqual(shop.marked, [7])
+
+    def test_order_not_marked_when_telegram_fails(self):
+        class BrokenTelegram(FakeTelegram):
+            def send(self, chat_id, text):
+                raise bot.TelegramError("sendMessage")
+        shop = self.Shop([self.ORDER])
+        with self.assertRaises(bot.TelegramError):
+            bot.notify_orders(BrokenTelegram(), shop, "555")
+        self.assertEqual(shop.marked, [])
+
+    def test_run_notifies_only_with_owner_id(self):
+        config = {"bot_token": FAKE_TOKEN, "shop_url": "https://shop.example", "shop_token": None}
+        telegram, shop = FakeTelegram(), self.Shop([self.ORDER])
+        bot.run(config, telegram=telegram, shop=shop, sleep=lambda s: None, max_loops=1)
+        self.assertEqual(telegram.sent, [])
+        bot.run(dict(config, owner_chat_id="555"), telegram=telegram, shop=shop, sleep=lambda s: None, max_loops=1)
+        self.assertEqual(len(telegram.sent), 1)
+
+    def test_id_command_replies_with_chat_id(self):
+        telegram = FakeTelegram()
+        bot.handle_update({"update_id": 1, "message": {"chat": {"id": 4242}, "text": "/id"}}, telegram, FakeShop())
+        self.assertEqual(telegram.sent, [(4242, "ID этого чата: 4242")])
+
+    def test_owner_id_must_be_number(self):
+        env = {"BOT_TOKEN": FAKE_TOKEN, "SHOP_API_URL": "https://shop.example", "OWNER_CHAT_ID": "abc"}
+        with self.assertRaises(bot.ConfigError):
+            bot.load_config(env)
+        self.assertEqual(bot.load_config(dict(env, OWNER_CHAT_ID="-1001"))["owner_chat_id"], "-1001")
+
+
 if __name__ == "__main__":
     unittest.main()

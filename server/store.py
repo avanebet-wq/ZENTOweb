@@ -178,7 +178,9 @@ def _migrate(conn) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
-    _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''", "user_id": "INTEGER"})
+    _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''", "user_id": "INTEGER",
+        # Старые заказы считаем уже отправленными в Telegram, новые создаются с notified = 0
+        "notified": "INTEGER NOT NULL DEFAULT 1"})
     _add_missing_columns(conn, "products", {
         "unit": "TEXT NOT NULL DEFAULT 'шт'",
         "on_home": "INTEGER NOT NULL DEFAULT 0",
@@ -789,8 +791,8 @@ def create_order(conn, payload, user_id=None) -> dict:
 
         total = sum(qty * price for _, qty, price in lines)
         cur = conn.execute(
-            "INSERT INTO orders (customer_id, status, total, address, user_id, created_at)"
-            " VALUES (?, 'new', ?, ?, ?, ?)",
+            "INSERT INTO orders (customer_id, status, total, address, user_id, notified, created_at)"
+            " VALUES (?, 'new', ?, ?, ?, 0, ?)",
             (customer_id, total, customer["address"], user_id, now),
         )
         order_id = cur.lastrowid
@@ -904,6 +906,43 @@ def list_user_orders(conn, user_id) -> list:
     for order in orders:
         order["items"] = items_by_order.get(order["id"], [])
     return orders
+
+
+def list_unnotified_orders(conn, limit=20) -> list:
+    """Новые заказы, о которых бот ещё не написал владельцу. Старые первыми."""
+    orders = [
+        dict(row) for row in conn.execute(
+            "SELECT o.id, o.total, o.address, o.created_at,"
+            "       c.name AS customer_name, c.phone AS customer_phone"
+            "  FROM orders o JOIN customers c ON c.id = o.customer_id"
+            " WHERE o.notified = 0 AND o.status = 'new'"
+            " ORDER BY o.id LIMIT ?", (limit,)
+        )
+    ]
+    if not orders:
+        return orders
+    marks = ",".join("?" for _ in orders)
+    items_by_order = {}
+    for row in conn.execute(
+        "SELECT oi.order_id, p.name AS product_name, p.unit AS unit, oi.qty, oi.price"
+        "  FROM order_items oi JOIN products p ON p.id = oi.product_id"
+        f" WHERE oi.order_id IN ({marks}) ORDER BY oi.id", [o["id"] for o in orders]
+    ):
+        items_by_order.setdefault(row["order_id"], []).append({
+            "name": row["product_name"], "unit": row["unit"],
+            "qty": row["qty"], "price": row["price"],
+        })
+    for order in orders:
+        order["items"] = items_by_order.get(order["id"], [])
+    return orders
+
+
+def mark_order_notified(conn, order_id) -> dict:
+    with transaction(conn):
+        cur = conn.execute("UPDATE orders SET notified = 1 WHERE id = ?", (order_id,))
+        if cur.rowcount == 0:
+            raise NotFound()
+    return {"id": order_id, "notified": True}
 
 
 def list_customers(conn) -> list:
