@@ -13,6 +13,7 @@
     name: document.getElementById('greet-name'),
     sr: document.getElementById('greet-sr'),
     badge: document.getElementById('rank-badge'),
+    icon: document.getElementById('rank-icon'),
     lvl: document.getElementById('rank-lvl'),
     rankName: document.getElementById('rank-name'),
     line: root.querySelector('.greet-line')
@@ -20,8 +21,8 @@
   var ctx = canvas.getContext('2d');
   var reduce = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
-  var WORD_A = 'Привет';
-  var WORD_B = 'Hello';
+  var WORD_A = 'Привет,';
+  var WORD_B = 'Hello,';
   var FAMILY = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif';
   var WHITE = [255, 255, 255];
   var BLUE = [64, 156, 255]; // --tint-text
@@ -30,19 +31,27 @@
 
   var state = { user: null, size: 48, w: 0, h: 0, dpr: 1, cell: 4, a: [], b: [], raf: 0, done: false, token: 0 };
 
-  function tierOf(level) { return Math.min(5, Math.ceil(level / 3)); } // 15 уровней = 5 ступеней по 3
+  // Значки у трёх высших рангов: искра, ромб, корона
+  var ICONS = {
+    13: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>',
+    14: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l9 10-9 10-9-10z"/></svg>',
+    15: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v3H3zM3 8l4.5 4L12 4l4.5 8L21 8l-2 9H5z"/></svg>'
+  };
 
   /* ---------- Ранг ---------- */
   function paintRank(rank) {
     if (!rank) return;
-    els.badge.setAttribute('data-tier', String(tierOf(rank.level)));
+    els.badge.className = 'rank-badge rank-badge--' + rank.level;
+    var icon = ICONS[rank.level];
+    els.icon.hidden = !icon;
+    els.icon.innerHTML = icon || ''; // константы выше, не данные с сервера
     els.lvl.textContent = String(rank.level);
     els.rankName.textContent = rank.name;
   }
 
   function paintName(nick) {
-    els.name.textContent = nick + '!';
-    els.sr.textContent = 'Привет, ' + nick + '!';
+    els.name.textContent = nick;
+    els.sr.textContent = 'Привет, ' + nick
   }
 
   /* ---------- Пиксельная анимация ---------- */
@@ -86,8 +95,6 @@
     canvas.height = Math.round(state.h * state.dpr);
     canvas.style.width = state.w + 'px';
     canvas.style.height = state.h + 'px';
-    // Базовая линия canvas-слова совпадает с базовой линией ника рядом
-    canvas.style.transform = 'translateY(' + Math.round(state.h * 0.22) + 'px)';
     ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
     state.a = sampleWord(WORD_A, px);
     state.b = sampleWord(WORD_B, px);
