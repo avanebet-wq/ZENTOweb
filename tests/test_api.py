@@ -197,7 +197,7 @@ class ProductsTest(ServerTestCase):
         self.assertEqual(len(resp.body), 3)
         self.assertEqual(
             set(resp.body[0]),
-            {"id", "name", "category", "price", "description", "color", "stock"},
+            {"id", "name", "category", "price", "description", "color", "stock", "unit", "on_home", "image_sha"},
         )
         self.assertEqual([p["id"] for p in resp.body], ["p1", "p2", "p3"])
 
@@ -483,6 +483,31 @@ class StatusTransitionsTest(ServerTestCase):
         resp = self.set_status(order_id, "new")
         self.assertEqual(resp.status, 400)
         self.assertEqual(self.stock_of("p2"), 2)
+
+    def test_admin_sets_tracking_and_status_separately(self):
+        order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
+        resp = self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": " 20450123456789 "})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["tracking"], "20450123456789")
+        orders = {o["id"]: o for o in self.admin("GET", "/api/admin/orders").body}
+        self.assertEqual(orders[order_id]["tracking"], "20450123456789")
+        self.assertEqual(orders[order_id]["status"], "new")
+
+    def test_tracking_rejects_bad_characters_and_too_long(self):
+        order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
+        for bad in ("12 34", "<script>", "9" * 41):
+            resp = self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": bad})
+            self.assertEqual(resp.status, 400, bad)
+            self.assertIn("tracking", resp.body["fields"])
+
+    def test_tracking_can_be_cleared_and_unknown_order_is_404(self):
+        order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
+        self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": "ABC-1"})
+        resp = self.admin("PATCH", f"/api/admin/orders/{order_id}", body={"tracking": ""})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["tracking"], "")
+        resp = self.admin("PATCH", "/api/admin/orders/999999", body={"tracking": "ABC-1"})
+        self.assertEqual(resp.status, 404)
 
     def test_unknown_status_and_missing_order(self):
         order_id = self.create_order([{"product_id": "p1", "qty": 1}]).body["order_id"]
@@ -855,7 +880,7 @@ class DbTest(unittest.TestCase):
 
     def test_old_database_gets_address_column(self):
         schema = store.SCHEMA_PATH.read_text(encoding="utf-8")
-        old_line = "    address     TEXT NOT NULL DEFAULT '',\n    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created"
+        old_line = "    address     TEXT NOT NULL DEFAULT '',\n    tracking    TEXT NOT NULL DEFAULT '',\n    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created"
         self.assertIn(old_line, schema)
         old_schema = schema.replace(old_line, "    created_at  TEXT NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_orders_created")
         tmp = Path(tempfile.mkdtemp(prefix="zento-old-"))
@@ -886,3 +911,68 @@ class AdminTokenNotLoggedTest(ServerTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- редактирование товара (единица, обложка)
+
+class ProductEditTest(ServerTestCase):
+    def png(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_images import png_bytes
+        return png_bytes(20, 10)
+
+    def upload(self, raw, content_type="image/png", token=TOKEN):
+        headers = {"Content-Type": content_type}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return self.request("PUT", "/api/admin/products/p1/image", raw=raw, headers=headers)
+
+    def test_unit_defaults_to_pieces_and_rejects_unknown(self):
+        created = self.admin("POST", "/api/admin/products", body={"name": "Мёд", "category": "Еда", "price": 150})
+        self.assertEqual(created.status, 201)
+        self.assertEqual(created.body["unit"], "шт")
+        resp = self.admin("PATCH", "/api/admin/products/p1", body={"unit": "кг"})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["unit"], "кг")
+        resp = self.admin("PATCH", "/api/admin/products/p1", body={"unit": "мл"})
+        self.assertEqual(resp.status, 400)
+        self.assertIn("unit", resp.body["fields"])
+
+    def test_cover_upload_is_public_and_can_be_removed(self):
+        png = self.png()
+        self.assertEqual(self.upload(png).status, 200)
+        resp = self.request("GET", "/api/products/p1/image")
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.raw, png)
+        self.assertEqual(resp.headers.get("Content-Type"), "image/png")
+        product = next(p for p in self.request("GET", "/api/products").body if p["id"] == "p1")
+        self.assertTrue(product["image_sha"])
+        self.assertEqual(self.request("DELETE", "/api/admin/products/p1/image",
+                                      headers={"Authorization": f"Bearer {TOKEN}"}).status, 200)
+        self.assertEqual(self.request("GET", "/api/products/p1/image").status, 404)
+
+    def test_cover_upload_needs_admin_and_a_real_image(self):
+        png = self.png()
+        self.assertIn(self.upload(png, token=None).status, (401, 403))
+        self.assertEqual(self.upload(b"hello", content_type="text/plain").status, 415)
+        self.assertEqual(self.upload(b"not an image").status, 400)
+        self.assertEqual(self.upload(png).status, 200)
+
+    def test_home_flag_and_delete(self):
+        resp = self.admin("PATCH", "/api/admin/products/p1", body={"on_home": True})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.body["on_home"], 1)
+        self.assertEqual(self.admin("PATCH", "/api/admin/products/p1", body={"on_home": "да"}).status, 400)
+        # товар без заказов удаляется вместе с обложкой
+        created = self.admin("POST", "/api/admin/products", body={"name": "Временный", "category": "Тест", "price": 1})
+        pid = created.body["id"]
+        self.assertEqual(self.admin("DELETE", f"/api/admin/products/{pid}").status, 200)
+        self.assertEqual(self.admin("DELETE", f"/api/admin/products/{pid}").status, 404)
+
+    def test_product_in_orders_cannot_be_deleted(self):
+        self.create_order([{"product_id": "p2", "qty": 1}])
+        resp = self.admin("DELETE", "/api/admin/products/p2")
+        self.assertEqual(resp.status, 400)
+        self.assertIn("product", resp.body["fields"])
+        self.assertEqual(self.admin("GET", "/api/admin/products").status, 200)
+

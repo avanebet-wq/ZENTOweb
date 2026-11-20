@@ -45,6 +45,7 @@ DISCARD_LIMIT_BYTES = 1024 * 1024
 # Загрузка картинки профиля: тело читаем целиком до 4 МБ (больше лимита баннера — 413 без чтения).
 # Порог «читать и выбросить» поднят только для этих маршрутов, чтобы клиент получал 413, а не обрыв.
 IMAGE_UPLOAD_PATHS = frozenset({"/api/profile/avatar", "/api/profile/banner"})
+PRODUCT_IMAGE_PATH = re.compile(r"^/api/admin/products/(?P<id>[^/]+)/image$")
 IMAGE_DISCARD_LIMIT_BYTES = 8 * 1024 * 1024
 IMAGE_CACHE_CONTROL = "private, max-age=3600"
 
@@ -422,9 +423,14 @@ def _admin_order_patch(handler, params, query):
     payload = handler._read_json()
     if not isinstance(payload, dict):
         raise ApiError(400, {"error": "Проверьте заполненные поля", "fields": {"body": "ожидается объект"}})
-    if "status" not in payload:
+    if "status" not in payload and "tracking" not in payload:
         raise ApiError(400, {"error": "Проверьте заполненные поля", "fields": {"status": "обязательное поле"}})
-    return 200, _run(handler, store.update_order_status, order_id, payload["status"])
+    result = {"id": order_id}
+    if "tracking" in payload:
+        result.update(_run(handler, store.update_order_tracking, order_id, payload["tracking"]))
+    if "status" in payload:
+        result.update(_run(handler, store.update_order_status, order_id, payload["status"]))
+    return 200, result
 
 
 def _admin_customers(handler, params, query):
@@ -438,6 +444,47 @@ def _admin_products(handler, params, query):
 def _admin_product_create(handler, params, query):
     payload = handler._read_json()
     return 201, _run(handler, store.create_product, payload)
+
+
+def _admin_product_image_put(handler, params, query):
+    """PUT /api/admin/products/{id}/image: тело — сама картинка (PNG, JPEG или WEBP)."""
+    product_id = _admin_text_id(params["id"])
+    header = images.header_type(handler.headers.get("Content-Type"))
+    if header is None:
+        raise ApiError(415, {"error": "Проверьте картинку", "fields": {"image": "нужен PNG, JPEG или WEBP"}})
+    state = handler._body_state
+    if state == "no-length":
+        raise ApiError(411, {"error": "length required"})
+    if state == "bad-length":
+        raise ApiError(400, {"error": "bad content-length"})
+    if state == "too-large" or len(handler._body) > images.MAX_BYTES["product"]:
+        raise ApiError(413, {"error": "Проверьте картинку", "fields": {"image": "больше 4 МБ"}})
+    try:
+        meta = images.inspect(handler._body, header, "product")
+    except images.ImageError as exc:
+        raise ApiError(400, {"error": "Проверьте картинку", "fields": exc.fields or {"image": exc.message}}) from None
+    _run(handler, store.save_product_image, product_id, handler._body, meta, store.utc_now())
+    return 200, {"ok": True}
+
+
+def _admin_product_delete(handler, params, query):
+    product_id = _admin_text_id(params["id"])
+    _run(handler, store.delete_product, product_id)
+    return 200, {"ok": True}
+
+
+def _admin_product_image_delete(handler, params, query):
+    product_id = _admin_text_id(params["id"])
+    _run(handler, store.delete_product_image, product_id)
+    return 200, {"ok": True}
+
+
+def _product_image_get(handler, params, query):
+    """Обложка товара публичная: её показывают и магазин, и админка."""
+    found = _run(handler, store.get_product_image, params["id"])
+    if found is None:
+        raise ApiError(404, {"error": "not found"})
+    return 200, ImageResponse(found["data"], found["content_type"], found["sha256"])
 
 
 def _admin_product_patch(handler, params, query):
@@ -821,6 +868,7 @@ ROUTES = [
     ("POST", re.compile(r"^/api/captcha/verify$"), _captcha_verify),
     ("GET", re.compile(r"^/api/products$"), _products_list),
     ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)$"), _product_get),
+    ("GET", re.compile(r"^/api/products/(?P<id>[^/]+)/image$"), _product_image_get),
     ("POST", re.compile(r"^/api/orders$"), _order_create),
     ("POST", re.compile(r"^/api/events$"), _event_create),
     ("GET", re.compile(r"^/api/admin/stats$"), _admin_stats),
@@ -828,6 +876,9 @@ ROUTES = [
     ("PATCH", re.compile(r"^/api/admin/orders/(?P<id>[^/]+)$"), _admin_order_patch),
     ("GET", re.compile(r"^/api/admin/customers$"), _admin_customers),
     ("GET", re.compile(r"^/api/admin/products$"), _admin_products),
+    ("PUT", PRODUCT_IMAGE_PATH, _admin_product_image_put),
+    ("DELETE", PRODUCT_IMAGE_PATH, _admin_product_image_delete),
+    ("DELETE", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_delete),
     ("POST", re.compile(r"^/api/admin/products$"), _admin_product_create),
     ("PATCH", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_patch),
     ("GET", re.compile(r"^/api/admin/backup$"), _admin_backup),
@@ -849,7 +900,7 @@ ROUTES = [
 
 def _body_limits(method, path):
     """Сколько байт тела читать и до какого размера выбрасывать. Для картинок профиля порог выше."""
-    if method == "PUT" and path in IMAGE_UPLOAD_PATHS:
+    if method == "PUT" and (path in IMAGE_UPLOAD_PATHS or PRODUCT_IMAGE_PATH.match(path)):
         return images.BANNER_MAX_BYTES, IMAGE_DISCARD_LIMIT_BYTES
     return MAX_BODY_BYTES, DISCARD_LIMIT_BYTES
 

@@ -52,8 +52,10 @@ MAX_SEARCH_LEN = 100
 DB_TIMEOUT_SECONDS = 10
 DB_RETRY_ATTEMPTS = 3
 
-PRODUCT_FIELDS = ("name", "category", "price", "description", "color", "stock")
-PUBLIC_PRODUCT_COLUMNS = "id, name, category, price, description, color, stock"
+PRODUCT_FIELDS = ("name", "category", "price", "description", "color", "stock", "unit", "on_home")
+PRODUCT_UNITS = ("шт", "л", "г", "кг")
+PUBLIC_PRODUCT_COLUMNS = ("id, name, category, price, description, color, stock, unit,"
+    " on_home, (SELECT sha256 FROM product_images pi WHERE pi.product_id = products.id) AS image_sha")
 ADMIN_PRODUCT_COLUMNS = PUBLIC_PRODUCT_COLUMNS + ", created_at"
 
 PHONE_CHARS_RE = re.compile(r"^\+?[0-9 ()\-.]+$")
@@ -176,6 +178,11 @@ def _migrate(conn) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
     if "address" not in columns:
         conn.execute("ALTER TABLE orders ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+    _add_missing_columns(conn, "orders", {"tracking": "TEXT NOT NULL DEFAULT ''"})
+    _add_missing_columns(conn, "products", {
+        "unit": "TEXT NOT NULL DEFAULT 'шт'",
+        "on_home": "INTEGER NOT NULL DEFAULT 0",
+    })
     _migrate_users(conn)
     # Профиль покупателя (описание и дата последней смены ника). Идемпотентно.
     _add_missing_columns(conn, "users", {
@@ -482,6 +489,18 @@ def _email(value):
     return text
 
 
+def _flag(value):
+    if isinstance(value, bool):
+        return int(value)
+    raise ValueError("ожидается true или false")
+
+
+def _unit(value):
+    if value not in PRODUCT_UNITS:
+        raise ValueError("единица измерения: " + ", ".join(PRODUCT_UNITS))
+    return value
+
+
 PRODUCT_CHECKS = {
     "name": lambda v: _text(v, 1, 120),
     "category": lambda v: _text(v, 1, 60),
@@ -489,6 +508,8 @@ PRODUCT_CHECKS = {
     "stock": lambda v: _int_range(v, 0, 1_000_000),
     "description": lambda v: _text(v, 0, 2000),
     "color": _color,
+    "unit": lambda v: _unit(v),
+    "on_home": lambda v: _flag(v),
 }
 PRODUCT_REQUIRED_ON_CREATE = ("name", "category", "price")
 
@@ -517,6 +538,8 @@ def clean_product(data, partial=False) -> dict:
         out.setdefault("description", "")
         out.setdefault("color", "")
         out.setdefault("stock", 0)
+        out.setdefault("unit", "шт")
+        out.setdefault("on_home", 0)
     return out
 
 
@@ -617,12 +640,61 @@ def create_product(conn, payload) -> dict:
     product_id = new_product_id()
     with transaction(conn):
         conn.execute(
-            "INSERT INTO products (id, name, category, price, description, color, stock, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO products (id, name, category, price, description, color, stock, unit, on_home, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (product_id, data["name"], data["category"], data["price"],
-             data["description"], data["color"], data["stock"], to_iso(utc_now())),
+             data["description"], data["color"], data["stock"], data["unit"], data["on_home"], to_iso(utc_now())),
         )
     return get_product(conn, product_id, admin=True)
+
+
+def delete_product(conn, product_id) -> None:
+    """Удаляет товар. Товар, который уже был в заказах, не удаляем: история заказов должна остаться."""
+    with transaction(conn):
+        if get_product(conn, product_id) is None:
+            raise NotFound()
+        in_orders = conn.execute(
+            "SELECT 1 FROM order_items WHERE product_id = ? LIMIT 1", (product_id,)
+        ).fetchone()
+        if in_orders is not None:
+            raise ValidationError(
+                {"product": "товар уже был в заказах, его нельзя удалить: уберите с главной и поставьте остаток 0"},
+                message="Товар в заказах",
+            )
+        conn.execute("UPDATE events SET product_id = NULL WHERE product_id = ?", (product_id,))
+        conn.execute("DELETE FROM product_images WHERE product_id = ?", (product_id,))
+        conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
+
+
+def save_product_image(conn, product_id, data, meta, now) -> None:
+    """Ставит обложку товара вместо прежней. meta — из images.inspect()."""
+    with transaction(conn):
+        if conn.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone() is None:
+            raise NotFound()
+        conn.execute(
+            "INSERT INTO product_images (product_id, content_type, data, width, height, sha256, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (product_id) DO UPDATE SET"
+            "   content_type = excluded.content_type, data = excluded.data,"
+            "   width = excluded.width, height = excluded.height,"
+            "   sha256 = excluded.sha256, updated_at = excluded.updated_at",
+            (product_id, meta["content_type"], data, meta["width"], meta["height"],
+             meta["sha256"], to_iso(now)),
+        )
+
+
+def get_product_image(conn, product_id):
+    row = conn.execute(
+        "SELECT content_type, data, sha256 FROM product_images WHERE product_id = ?", (product_id,)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def delete_product_image(conn, product_id) -> None:
+    with transaction(conn):
+        if get_product(conn, product_id) is None:
+            raise NotFound()
+        conn.execute("DELETE FROM product_images WHERE product_id = ?", (product_id,))
 
 
 def update_product(conn, product_id, payload) -> dict:
@@ -732,6 +804,28 @@ def create_order(conn, payload) -> dict:
     return {"order_id": order_id, "total": total, "status": "new"}
 
 
+TRACKING_RE = re.compile(r"^[A-Za-z0-9-]{0,40}$")
+
+
+def update_order_tracking(conn, order_id, tracking) -> dict:
+    """Трек-номер посылки «Новой почты». Пустая строка — номера пока нет."""
+    if tracking is None:
+        tracking = ""
+    if not isinstance(tracking, str):
+        raise ValidationError({"tracking": "трек-номер — строка из букв, цифр и дефисов"})
+    tracking = tracking.strip()
+    if not TRACKING_RE.match(tracking):
+        raise ValidationError(
+            {"tracking": "только буквы, цифры и дефис, не больше 40 символов"},
+            message="Неверный трек-номер",
+        )
+    with transaction(conn):
+        cur = conn.execute("UPDATE orders SET tracking = ? WHERE id = ?", (tracking, order_id))
+        if cur.rowcount == 0:
+            raise NotFound()
+    return {"id": order_id, "tracking": tracking}
+
+
 def update_order_status(conn, order_id, status) -> dict:
     if status not in ORDER_STATUSES:
         raise ValidationError(
@@ -760,7 +854,7 @@ def update_order_status(conn, order_id, status) -> dict:
 def list_orders(conn) -> list:
     orders = [
         dict(row) for row in conn.execute(
-            "SELECT o.id, o.status, o.total, o.address, o.created_at,"
+            "SELECT o.id, o.status, o.total, o.address, o.tracking, o.created_at,"
             "       c.id AS customer_id, c.name AS customer_name,"
             "       c.phone AS customer_phone, c.email AS customer_email"
             "  FROM orders o JOIN customers c ON c.id = o.customer_id"

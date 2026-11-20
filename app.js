@@ -38,11 +38,14 @@
   var PRODUCT_PHOTO = 'assets/products/pinecones.jpg';
   var PRODUCT_PHOTO_W = 493;
   var PRODUCT_PHOTO_H = 403;
-  // Путь к картинке для любого товара; когда появятся свои фото, сюда добавится выбор по p.id
-  function productPhotoSrc() { return PRODUCT_PHOTO; }
+  // Обложка товара с сервера; если её нет — общее фото
+  function productPhotoSrc(p) {
+    if (p && p.image_sha) return '/api/products/' + encodeURIComponent(p.id) + '/image?v=' + String(p.image_sha).slice(0, 16);
+    return PRODUCT_PHOTO;
+  }
   // eager — для картинки первого экрана, остальные грузятся по мере прокрутки
   function productImgHTML(p, eager) {
-    return '<img src="' + productPhotoSrc() + '" alt="' + esc(p && p.name) + '" width="' + PRODUCT_PHOTO_W + '" height="' + PRODUCT_PHOTO_H + '"' +
+    return '<img src="' + esc(productPhotoSrc(p)) + '" alt="' + esc(p && p.name) + '" width="' + PRODUCT_PHOTO_W + '" height="' + PRODUCT_PHOTO_H + '"' +
       (eager ? ' fetchpriority="high"' : ' loading="lazy"') + ' decoding="async">';
   }
   function artHTML(p, cls) {
@@ -171,7 +174,7 @@
   function cartCount() { return cartLines().reduce(function (s, x) { return s + x.item.qty; }, 0); }
 
   function priceHTML(p) {
-    var now = '<span class="price-now">' + money(p.price) + '</span>';
+    var now = '<span class="price-now">' + money(p.price) + ' <span class="price-unit">/ ' + esc(p.unit || 'шт') + '</span></span>';
     if (num(p.old_price) > num(p.price)) return '<s class="price-old">' + money(p.old_price) + '</s>' + now;
     return now;
   }
@@ -291,7 +294,7 @@
       return '<li class="cart-item glass">' +
         artHTML(p, 'art-sm') +
         '<div class="cart-info"><p class="cart-name">' + esc(p.name) + '</p>' +
-        '<p class="cart-unit">' + money(p.price) + ' за шт.</p></div>' +
+        '<p class="cart-unit">' + money(p.price) + ' за ' + esc(p.unit || 'шт') + '.</p></div>' +
         '<div class="cart-row">' +
           '<div class="stepper">' +
             '<button class="qty-btn press" type="button" data-dec="' + id + '" aria-label="Уменьшить количество: ' + esc(p.name) + '">−</button>' +
@@ -568,7 +571,19 @@
   }
 
   // Каждый блок страницы рисуется, только если он есть (главная и каталог — разные страницы)
+  // Товары для главной: до трёх, у которых в админке стоит «На главной»
+  function renderHome() {
+    var section = el('home-picks');
+    var grid = el('home-grid');
+    if (!section || !grid) return;
+    var list = products.filter(function (p) { return num(p.on_home) === 1; }).slice(0, 3);
+    section.hidden = !list.length;
+    grid.innerHTML = '';
+    list.forEach(function (p, i) { grid.appendChild(productCard(p, i)); });
+  }
+
   function renderAll() {
+    renderHome();
     renderHero();
     renderChips();
     renderRows();
@@ -696,7 +711,7 @@
   /* ================= АДМИНКА ================= */
   var TOKEN_KEY = 'zento-admin-token';
   var STATUSES = [
-    ['new', 'Новый'],
+    ['new', 'Ожидает подтверждения'],
     ['paid', 'Оплачен'],
     ['shipped', 'Отправлен'],
     ['done', 'Выполнен'],
@@ -904,16 +919,38 @@
             : '';
           return '<tr><td>№ ' + esc(o.id) + '</td>' +
             '<td data-label="Дата">' + esc(fmtDate(o.created_at)) + '</td>' +
-            '<td data-label="Покупатель">' + esc(c.name || '—') + '<br><span class="muted">' + esc(c.phone || '') + '</span></td>' +
+            '<td data-label="Покупатель">' + esc(c.name || '—') + '<br><span class="muted">' + esc(c.phone || '') + '</span>' +
+            (o.address ? '<br><span class="muted">' + esc(o.address) + '</span>' : '') + '</td>' +
             '<td data-label="Товары">' + items + '</td>' +
             '<td data-label="Сумма">' + money(o.total) + '</td>' +
-            '<td data-label="Статус">' + statusSelect(o.id, o.status) + '</td></tr>';
-        }).join('') : '<tr><td colspan="6" class="muted">Заказов пока нет</td></tr>';
+            '<td data-label="Статус">' + statusSelect(o.id, o.status) + '</td>' +
+            '<td data-label="Трек-номер"><input class="tracking-input" type="text" maxlength="40" data-tracking="' + esc(o.id) +
+            '" data-prev="' + esc(o.tracking || '') + '" value="' + esc(o.tracking || '') +
+            '" placeholder="Появится после отправки" aria-label="Трек-номер заказа ' + esc(o.id) + '"></td></tr>';
+        }).join('') : '<tr><td colspan="7" class="muted">Заказов пока нет</td></tr>';
         loaded.orders = true;
       }).catch(function (err) { onApiError(err, 'Не удалось загрузить заказы'); });
     }
 
     el('orders-body').addEventListener('change', function (e) {
+      var track = e.target;
+      if (track.matches && track.matches('input[data-tracking]')) {
+        var tid = track.getAttribute('data-tracking');
+        var tprev = track.getAttribute('data-prev');
+        track.disabled = true;
+        api('/api/admin/orders/' + encodeURIComponent(tid), { method: 'PATCH', body: { tracking: track.value.trim() } })
+          .then(function (res) {
+            track.value = res && res.tracking != null ? res.tracking : track.value.trim();
+            track.setAttribute('data-prev', track.value);
+            toast(track.value ? 'Трек-номер заказа ' + tid + ' сохранён' : 'Трек-номер заказа ' + tid + ' очищен');
+          })
+          .catch(function (err) {
+            track.value = tprev;
+            onApiError(err, 'Не удалось сохранить трек-номер');
+          })
+          .then(function () { track.disabled = false; });
+        return;
+      }
       var sel = e.target;
       if (!sel.matches || !sel.matches('select[data-order]')) return;
       var id = sel.getAttribute('data-order');
@@ -949,6 +986,9 @@
     /* Товары */
     function isInt(s) { return /^\d+$/.test(s); }
 
+    var productsById = {};
+    var editingId = null;
+
     function productRow(p) {
       var id = esc(p.id);
       return '<tr>' +
@@ -958,13 +998,16 @@
           '<input class="num-input" id="price-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.price) + '"></td>' +
         '<td data-label="Остаток, шт."><label class="visually-hidden" for="stock-' + id + '">Остаток: ' + esc(p.name) + '</label>' +
           '<input class="num-input" id="stock-' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + num(p.stock) + '"></td>' +
-        '<td class="actions"><button class="btn btn-ghost btn-small press" type="button" data-save="' + id + '">Сохранить</button></td>' +
+        '<td class="actions"><button class="btn btn-ghost btn-small press" type="button" data-edit="' + id + '">Изменить</button> ' +
+          '<button class="btn btn-ghost btn-small press" type="button" data-save="' + id + '">Сохранить</button></td>' +
         '</tr>';
     }
 
     function loadProducts() {
       return api('/api/admin/products').then(function (list) {
         list = Array.isArray(list) ? list : [];
+        productsById = {};
+        list.forEach(function (p) { productsById[p.id] = p; });
         el('products-body').innerHTML = list.length
           ? list.map(productRow).join('')
           : '<tr><td colspan="5" class="muted">Товаров пока нет</td></tr>';
@@ -972,7 +1015,63 @@
       }).catch(function (err) { onApiError(err, 'Не удалось загрузить товары'); });
     }
 
+    function coverSrc(p) {
+      return p && p.image_sha ? '/api/products/' + encodeURIComponent(p.id) + '/image?v=' + String(p.image_sha).slice(0, 16) : '';
+    }
+
+    function setCoverPreview(src) {
+      var img = el('ed-cover-img');
+      img.hidden = !src;
+      img.src = src || '';
+      el('ed-cover-none').hidden = !!src;
+      el('ed-cover-remove').hidden = !src;
+    }
+
+    function openEdit(id, opener) {
+      var p = productsById[id];
+      if (!p) return;
+      editingId = id;
+      el('ed-name').value = p.name || '';
+      el('ed-category').value = p.category || '';
+      el('ed-desc').value = p.description || '';
+      el('ed-price').value = num(p.price);
+      el('ed-stock').value = num(p.stock);
+      el('ed-unit').value = p.unit || 'шт';
+      el('ed-home').checked = num(p.on_home) === 1;
+      el('ed-file').value = '';
+      el('ed-error').hidden = true;
+      setCoverPreview(coverSrc(p));
+      var d = el('edit-dialog');
+      d.opener = opener || null;
+      try { d.showModal(); } catch (err) { d.setAttribute('open', ''); }
+      el('ed-name').focus();
+    }
+
+    function closeEdit() {
+      var d = el('edit-dialog');
+      try { d.close(); } catch (err) { d.removeAttribute('open'); }
+      editingId = null;
+    }
+
+    function uploadCover(id, file) {
+      return fetch('/api/admin/products/' + encodeURIComponent(id) + '/image', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': file.type },
+        body: file
+      }).then(function (res) {
+        if (res.ok) return;
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          var msg = body && body.fields && body.fields.image ? body.fields.image : 'Не получилось загрузить обложку';
+          var err = new Error(msg);
+          err.status = res.status;
+          throw err;
+        });
+      });
+    }
+
     el('products-body').addEventListener('click', function (e) {
+      var edit = e.target.closest && e.target.closest('[data-edit]');
+      if (edit) { openEdit(edit.getAttribute('data-edit'), edit); return; }
       var btn = e.target.closest && e.target.closest('[data-save]');
       if (!btn) return;
       var id = btn.getAttribute('data-save');
@@ -993,6 +1092,76 @@
         onApiError(err, 'Не удалось сохранить товар');
       }).then(function () {
         btn.disabled = false;
+      });
+    });
+
+    el('ed-file').addEventListener('change', function () {
+      var f = el('ed-file').files && el('ed-file').files[0];
+      if (!f) return;
+      // data: разрешён политикой картинок, blob: — нет
+      var reader = new FileReader();
+      reader.onload = function () { setCoverPreview(String(reader.result)); };
+      reader.readAsDataURL(f);
+    });
+    el('ed-cancel').addEventListener('click', closeEdit);
+    el('ed-delete').addEventListener('click', function () {
+      if (!editingId) return;
+      var id = editingId;
+      var name = (productsById[id] && productsById[id].name) || '';
+      if (!window.confirm('Удалить товар «' + name + '»? Это нельзя отменить.')) return;
+      api('/api/admin/products/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+        toast('Товар удалён: ' + name);
+        closeEdit();
+        return loadProducts();
+      }).catch(function (err) {
+        var errBox = el('ed-error');
+        errBox.textContent = err.status === 0 ? 'Нет связи с сервером'
+          : 'Не удалось удалить. Если товар уже был в заказах, его нельзя удалить: уберите «На главной» и поставьте остаток 0.';
+        errBox.hidden = false;
+      });
+    });
+    el('ed-cover-remove').addEventListener('click', function () {
+      if (!editingId) return;
+      var id = editingId;
+      api('/api/admin/products/' + encodeURIComponent(id) + '/image', { method: 'DELETE' }).then(function () {
+        el('ed-file').value = '';
+        setCoverPreview('');
+        toast('Обложка убрана');
+        return loadProducts();
+      }).catch(function (err) { onApiError(err, 'Не удалось убрать обложку'); });
+    });
+    el('edit-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!editingId) return;
+      var id = editingId;
+      var errBox = el('ed-error');
+      var name = el('ed-name').value.trim();
+      var category = el('ed-category').value.trim();
+      var price = el('ed-price').value.trim();
+      var stock = el('ed-stock').value.trim();
+      if (!name || !category) { errBox.textContent = 'Укажите название и категорию'; errBox.hidden = false; return; }
+      if (!isInt(price) || !isInt(stock)) { errBox.textContent = 'Цена и остаток — целые числа, не меньше нуля'; errBox.hidden = false; return; }
+      var file = el('ed-file').files && el('ed-file').files[0];
+      var save = el('ed-save');
+      save.disabled = true;
+      api('/api/admin/products/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        body: {
+          name: name, category: category, description: el('ed-desc').value.trim(),
+          price: Number(price), stock: Number(stock), unit: el('ed-unit').value,
+          on_home: el('ed-home').checked
+        }
+      }).then(function () {
+        return file ? uploadCover(id, file) : null;
+      }).then(function () {
+        toast('Товар сохранён: ' + name);
+        closeEdit();
+        return loadProducts();
+      }).catch(function (err) {
+        errBox.textContent = err.status === 0 ? 'Нет связи с сервером' : (err.message && err.message.indexOf('HTTP') !== 0 ? err.message : 'Не получилось сохранить товар');
+        errBox.hidden = false;
+      }).then(function () {
+        save.disabled = false;
       });
     });
 

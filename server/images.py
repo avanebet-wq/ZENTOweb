@@ -14,8 +14,8 @@ AVATAR_MAX_BYTES = 2 * 1024 * 1024
 BANNER_MAX_BYTES = 4 * 1024 * 1024
 AVATAR_MAX_SIDE = 2048
 BANNER_MAX_SIDE = 4096
-MAX_BYTES = {"avatar": AVATAR_MAX_BYTES, "banner": BANNER_MAX_BYTES}
-MAX_SIDE = {"avatar": AVATAR_MAX_SIDE, "banner": BANNER_MAX_SIDE}
+MAX_BYTES = {"avatar": AVATAR_MAX_BYTES, "banner": BANNER_MAX_BYTES, "product": BANNER_MAX_BYTES}
+MAX_SIDE = {"avatar": AVATAR_MAX_SIDE, "banner": BANNER_MAX_SIDE, "product": BANNER_MAX_SIDE}
 
 ALLOWED_TYPES = ("image/png", "image/jpeg", "image/webp")
 
