@@ -194,7 +194,9 @@
     var badge = el('cart-count');
     badge.textContent = n;
     badge.hidden = n === 0;
-    el('cart-open').setAttribute('aria-label', 'Корзина, товаров: ' + n);
+    el('menu-open').setAttribute('aria-label', n ? 'Меню, товаров в корзине: ' + n : 'Меню');
+    var rowBadge = el('menu-cart-count');
+    if (rowBadge) { rowBadge.textContent = n; rowBadge.hidden = n === 0; }
   }
 
   function addToCart(id) {
@@ -697,15 +699,47 @@
     if ((hit = t.closest('[data-remove]'))) return removeItem(hit.getAttribute('data-remove'));
   }
 
+  /* ---------- Меню сайта ---------- */
+  // Настройки лежат внутри профиля: открываем профиль и, когда он загрузится, нажимаем шестерёнку
+  function openSettingsFromMenu(opener) {
+    document.dispatchEvent(new CustomEvent('zento:profile-open', { detail: { opener: opener } }));
+    var tries = 0;
+    var timer = setInterval(function () {
+      var gear = document.getElementById('pf-gear');
+      var screen = document.getElementById('profile-dialog');
+      tries++;
+      if (gear && screen && screen.open && !gear.disabled && gear.style.visibility !== 'hidden') {
+        clearInterval(timer);
+        gear.click();
+      } else if (tries > 40) {
+        clearInterval(timer);
+      }
+    }, 100);
+  }
+
+  function onMenuClick(e) {
+    var item = e.target.closest && e.target.closest('[data-menu]');
+    if (!item) return;
+    var what = item.getAttribute('data-menu');
+    var menu = el('menu-dialog');
+    var opener = el('menu-open');
+    // Сначала закрываем меню, потом открываем нужное окно
+    menu.addEventListener('close', function () {
+      if (what === 'cart') openCart(opener);
+      else if (what === 'orders') openOrders(opener);
+      else if (what === 'settings') openSettingsFromMenu(opener);
+    }, { once: true });
+    closeDialog(menu);
+  }
+
   function initShop() {
     if (el('product-dialog')) bindDialog(el('product-dialog'));
     bindDialog(el('cart-dialog'));
-    if (el('orders-dialog') && el('orders-open')) {
-      bindDialog(el('orders-dialog'));
-      el('orders-open').addEventListener('click', function (e) { openOrders(e.currentTarget); });
-    }
+    if (el('orders-dialog')) bindDialog(el('orders-dialog'));
+    bindDialog(el('menu-dialog'));
+    el('menu-open').addEventListener('click', function (e) { openDialog(el('menu-dialog'), e.currentTarget); });
+    el('menu-dialog').addEventListener('click', onMenuClick);
     document.addEventListener('click', onShopClick);
-    el('cart-open').addEventListener('click', function (e) { openCart(e.currentTarget); });
     if (el('p-add')) el('p-add').addEventListener('click', function () { if (addToCart(currentId)) refreshAddButton(); });
     el('checkout-btn').addEventListener('click', function () {
       showView('checkout');

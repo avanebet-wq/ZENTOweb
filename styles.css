@@ -938,3 +938,13 @@ td .muted { font-size: 13px; }
 .order-items { list-style: none; margin: 8px 0 0; padding: 0; font-size: 17px; }
 .order-total { margin: 8px 0 0; font-weight: 600; }
 .order-track a { color: #409CFF; text-decoration: underline; }
+
+/* Меню сайта: список как в «Настройках» iOS */
+.menu-list { list-style: none; margin: 0; padding: 0; border-radius: 16px; background: rgba(255, 255, 255, .08); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25); overflow: hidden; }
+.menu-list li + li { background: linear-gradient(rgba(255, 255, 255, .14), rgba(255, 255, 255, .14)) 16px 0 / calc(100% - 16px) .5px no-repeat; }
+.menu-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 0 16px; box-sizing: border-box; border: 0; background: none; color: #fff; font: inherit; font-size: 17px; text-align: left; text-decoration: none; cursor: pointer; }
+.menu-row > span:first-child { flex: 1; }
+.menu-row[aria-current="page"] > span:first-child { color: #409CFF; }
+.menu-row:active { background-color: rgba(255, 255, 255, .08); }
+.menu-chev { flex: none; color: rgba(235, 235, 245, .45); }
+.menu-badge { min-width: 22px; height: 22px; padding: 0 7px; box-sizing: border-box; border-radius: 11px; background: #0A84FF; color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
