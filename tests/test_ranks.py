@@ -87,5 +87,28 @@ class AwardXpTest(ProfileServerBase):
         self.assertEqual(user["rank"]["next_at"], 30)
 
 
+class AdminRankTest(ProfileServerBase):
+    def setUp(self):
+        super().setUp()
+        self.uid = self.make_user("Anna", email="anna@example.com")
+
+    def post(self, body, headers=None):
+        from test_api import TOKEN
+        h = {"Authorization": f"Bearer {TOKEN}"} if headers is None else headers
+        return self.request("POST", "/api/admin/rank", body=body, headers=h)
+
+    def test_admin_raises_rank_by_email_and_xp_never_drops(self):
+        resp = self.post({"login": "ANNA@example.com", "level": 15})
+        self.assertEqual(resp.status, 200, resp.body)
+        self.assertEqual(resp.body["rank"]["level"], 15)
+        again = self.post({"login": "anna", "level": 3})
+        self.assertEqual(again.body["rank"]["level"], 15)
+
+    def test_needs_admin_token_and_valid_body(self):
+        self.assertEqual(self.post({"login": "anna", "level": 15}, headers={}).status, 401)
+        self.assertEqual(self.post({"login": "anna", "level": 16}).status, 400)
+        self.assertEqual(self.post({"login": "nobodyhere", "level": 2}).status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()

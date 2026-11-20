@@ -453,6 +453,13 @@ def _admin_achievement_grant(handler, params, query):
     return 200, {"ok": True, **result}
 
 
+def _admin_rank_set(handler, params, query):
+    """POST /api/admin/rank: {"login": почта или ник, "level": 1..15} — поднять ранг (опыт только растёт)."""
+    payload = _auth_json(handler)
+    result = _run_auth(handler, store.set_rank_by_login, payload, store.utc_now())
+    return 200, {"ok": True, **result}
+
+
 def make_backup(db_path) -> bytes:
     """Делает копию базы через встроенный механизм SQLite (безопасно, даже когда идут заказы).
     Проверяет копию командой PRAGMA integrity_check. Если проверка не 'ok' — ошибка, копию не отдаём."""
@@ -825,6 +832,7 @@ ROUTES = [
     ("PATCH", re.compile(r"^/api/admin/products/(?P<id>[^/]+)$"), _admin_product_patch),
     ("GET", re.compile(r"^/api/admin/backup$"), _admin_backup),
     ("POST", re.compile(r"^/api/admin/achievements/grant$"), _admin_achievement_grant),
+    ("POST", re.compile(r"^/api/admin/rank$"), _admin_rank_set),
     ("GET", re.compile(r"^/api/profile/me$"), _profile_me),
     ("PATCH", re.compile(r"^/api/profile$"), _profile_patch),
     ("PUT", re.compile(r"^/api/profile/avatar$"), _profile_put_avatar),

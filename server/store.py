@@ -1540,3 +1540,28 @@ def grant_achievement_by_login(conn, payload, now) -> dict:
             raise Rejected("not_found")
         granted = _grant(conn, user["id"], code, now)
     return {"granted": granted, "user": {"nick": user["nick"], "public_id": user["public_id"]}}
+
+
+def set_rank_by_login(conn, payload, now) -> dict:
+    """Админ: ставит покупателю опыт не ниже порога нужного уровня (login: почта или ник, level: 1..15).
+    Опыт только растёт: если у покупателя уже больше, остаётся прежний."""
+    if not isinstance(payload, dict):
+        raise ValidationError({"body": "Ожидается объект с полями login и level"})
+    errors = {}
+    login = payload.get("login")
+    if not isinstance(login, str) or login_identity(login) is None:
+        errors["login"] = "укажите почту или ник покупателя"
+    level = payload.get("level")
+    if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= ranks.MAX_LEVEL:
+        errors["level"] = f"уровень от 1 до {ranks.MAX_LEVEL}"
+    if errors:
+        raise ValidationError(errors)
+    kind, value = login_identity(login)
+    column = "email" if kind == "email" else "nick_lower"
+    with transaction(conn):
+        user = conn.execute(f"SELECT id, nick, xp FROM users WHERE {column} = ?", (value,)).fetchone()
+        if user is None:
+            raise Rejected("not_found")
+        xp = max(user["xp"], ranks.threshold(level))
+        conn.execute("UPDATE users SET xp = ? WHERE id = ?", (xp, user["id"]))
+    return {"user": {"nick": user["nick"]}, "rank": ranks.rank_for(xp)}
