@@ -1,185 +1,105 @@
-/* ZENTO: полоса карточек «Акции / Новости / Новинки» (главная страница).
-   Данные: assets/promo.json. Смена слайда каждые 5 с.
-   Пауза: кнопкой, при наведении мыши, при фокусе и при касании (продолжаем через 5 с после последнего касания),
-   когда вкладка скрыта. Вручную: точки, стрелки, свайп. prefers-reduced-motion: без авто-смены.
-   Один таймер создаётся один раз и останавливается при уходе со страницы. */
+/* ZENTO: новости на главной (рулетка, Telegram-бот, приложение). Карточки лежат в index.html.
+   Ряд листается пальцем (scroll-snap). Точки показывают текущую карточку и переключают её.
+   Автосмена каждые 5 с, только если карточки не помещаются в ширину. Пауза: мышь над рядом, фокус, касание
+   (продолжаем через 5 с), скрытая вкладка. prefers-reduced-motion: без автосмены. */
 (function () {
   'use strict';
 
-  var STEP_MS = 5000;   // сколько показываем слайд
-  var TICK_MS = 200;    // шаг таймера; копим только время, когда карусель идёт
-  var HOLD_MS = 5000;   // после касания ждём 5 с
-  var SWIPE_PX = 40;    // минимальный сдвиг пальцем для свайпа
+  var STEP_MS = 5000;
+  var HOLD_MS = 5000;
+
+  var row = document.getElementById('promo-row');
+  var dotsBox = document.getElementById('promo-dots');
+  var section = document.getElementById('promo');
+  if (!row || !dotsBox || !section) return;
+
+  var cards = Array.prototype.slice.call(row.querySelectorAll('.promo-card'));
+  if (!cards.length) { section.hidden = true; return; }
 
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  var section = document.getElementById('promo');
-  var track = document.getElementById('promo-track');
-  var viewport = document.getElementById('promo-viewport');
-  var dotsBox = document.getElementById('promo-dots');
-  if (!section || !track || !viewport || !dotsBox) return;
-
-  var slides = [];
   var dots = [];
   var index = 0;
-  var hovering = false;     // мышь над полосой
-  var focused = false;      // фокус внутри полосы
-  var touching = false;     // палец на полосе
-  var holdUntil = 0;        // до этого момента после касания не идём
-  var hiddenNow = document.hidden;
-  var acc = 0;              // сколько мс слайд уже показан
-  var last = 0;
-  var timer = 0;
+  var hovering = false, focused = false, touching = false;
+  var holdUntil = 0, acc = 0, last = 0, timer = 0;
 
-  function now() { return Date.now(); }
-  function autoOK() { return !reduceMotion.matches; }
-  function running() {
-    return autoOK() && !hovering && !focused && !touching && !hiddenNow &&
-      slides.length > 1 && now() >= holdUntil;
-  }
+  function scrollable() { return row.scrollWidth - row.clientWidth > 8; }
 
-  function el(tag, cls, text) {
-    var node = document.createElement(tag);
-    if (cls) node.className = cls;
-    if (text != null) node.textContent = text;
-    return node;
-  }
+  function cardLeft(card) { return card.offsetLeft - row.offsetLeft - (parseFloat(getComputedStyle(row).paddingLeft) || 0); }
 
-  /* ---------- Построение ---------- */
-  function validSlide(s) {
-    return s && typeof s.title === 'string' && Array.isArray(s.items) && s.items.length > 0;
-  }
+  cards.forEach(function (card, k) {
+    card.setAttribute('aria-label', 'Карточка ' + (k + 1) + ' из ' + cards.length);
+    var dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'promo-dot press';
+    dot.setAttribute('aria-label', 'Карточка ' + (k + 1));
+    dot.addEventListener('click', function () { go(k); acc = 0; });
+    dotsBox.appendChild(dot);
+    dots.push(dot);
+  });
 
-  function buildSlide(data, k, total) {
-    var slide = el('div', 'promo-slide');
-    slide.setAttribute('role', 'group');
-    slide.setAttribute('aria-roledescription', 'slide');
-    slide.setAttribute('aria-label', 'Слайд ' + (k + 1) + ' из ' + total + ': ' + data.title);
-
-    var card = el('article', 'promo-card');
-    card.appendChild(el('p', 'promo-tag', 'Испытай удачу'));
-    card.appendChild(el('h3', 'promo-card-title', data.title));
-    var list = el('ul', 'promo-list');
-    data.items.forEach(function (item) {
-      var li = el('li');
-      li.appendChild(el('span', 'promo-item-title', String(item.title || '')));
-      li.appendChild(el('span', 'promo-item-text', String(item.text || '')));
-      list.appendChild(li);
-    });
-    card.appendChild(list);
-    slide.appendChild(card);
-    return slide;
-  }
-
-  function build(data) {
-    var list = data && Array.isArray(data.slides) ? data.slides.filter(validSlide) : [];
-    if (!list.length) { section.hidden = true; return; }
-    list.forEach(function (s, k) {
-      var slide = buildSlide(s, k, list.length);
-      track.appendChild(slide);
-      slides.push(slide);
-
-      var dot = el('button', 'promo-dot press');
-      dot.type = 'button';
-      dot.setAttribute('aria-label', 'Слайд ' + (k + 1));
-      dot.addEventListener('click', function () { go(k); });
-      dotsBox.appendChild(dot);
-      dots.push(dot);
-    });
-  }
-
-  /* ---------- Переключение ---------- */
-  function show(k) {
+  function mark(k) {
     index = k;
-    slides.forEach(function (s, i) { s.classList.toggle('is-active', i === k); });
     dots.forEach(function (d, i) {
-      if (i === k) d.setAttribute('aria-current', 'true');
-      else d.removeAttribute('aria-current');
+      if (i === k) d.setAttribute('aria-current', 'true'); else d.removeAttribute('aria-current');
     });
   }
 
-  // Ручной переход (точки, стрелки, свайп) или переход по таймеру: отсчёт начинается заново
   function go(k) {
-    var n = slides.length;
-    if (!n) return;
-    show(((k % n) + n) % n);
-    acc = 0;
+    var n = cards.length;
+    k = ((k % n) + n) % n;
+    row.scrollTo({ left: cardLeft(cards[k]), behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+    mark(k);
   }
 
-  /* ---------- Один таймер ---------- */
+  // Какая карточка ближе к левому краю: по ней рисуем точку (при ручной прокрутке)
+  var raf = 0;
+  row.addEventListener('scroll', function () {
+    if (raf) return;
+    raf = window.requestAnimationFrame(function () {
+      raf = 0;
+      var best = 0, dist = Infinity;
+      cards.forEach(function (c, i) {
+        var d = Math.abs(c.offsetLeft - row.offsetLeft - row.scrollLeft - (parseFloat(getComputedStyle(row).paddingLeft) || 0));
+        if (d < dist) { dist = d; best = i; }
+      });
+      if (best !== index) mark(best);
+    });
+  }, { passive: true });
+
+  function running() {
+    return !reduceMotion.matches && !hovering && !focused && !touching && !document.hidden &&
+      scrollable() && Date.now() >= holdUntil;
+  }
+
   function tick() {
-    var t = now();
+    var t = Date.now();
     var dt = last ? t - last : 0;
     last = t;
-    // Если вкладку усыпили или таймер задержался, это время не засчитываем
     if (dt > 1000) dt = 0;
     if (!running()) return;
     acc += dt;
-    if (acc >= STEP_MS) go(index + 1);
+    if (acc >= STEP_MS) { acc = 0; go(index + 1); }
   }
 
-  /* ---------- Пауза и ручное управление ---------- */
-  viewport.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') hovering = true; });
-  viewport.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') hovering = false; });
-
-  // Фокус внутри области карточек (стрелками) тоже останавливает смену.
-  // Кнопки «Пауза» и точки сюда не входят, иначе «Продолжить» не смогло бы запустить смену
-  viewport.addEventListener('focusin', function () { focused = true; });
-  viewport.addEventListener('focusout', function (e) {
-    if (!viewport.contains(e.relatedTarget)) focused = false;
+  row.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') hovering = true; });
+  row.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') hovering = false; });
+  row.addEventListener('focusin', function () { focused = true; });
+  row.addEventListener('focusout', function (e) { if (!row.contains(e.relatedTarget)) focused = false; });
+  row.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(index + 1); acc = 0; }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); go(index - 1); acc = 0; }
   });
+  row.addEventListener('touchstart', function () { touching = true; }, { passive: true });
+  function release() { touching = false; holdUntil = Date.now() + HOLD_MS; acc = 0; }
+  row.addEventListener('touchend', release, { passive: true });
+  row.addEventListener('touchcancel', release, { passive: true });
+  document.addEventListener('visibilitychange', function () { last = 0; acc = 0; });
 
-  viewport.addEventListener('keydown', function (e) {
-    if (e.key === 'ArrowRight') { e.preventDefault(); go(index + 1); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); go(index - 1); }
-  });
-
-  var startX = 0;
-  var startY = 0;
-  viewport.addEventListener('touchstart', function (e) {
-    touching = true;
-    var t = e.touches[0];
-    startX = t.clientX;
-    startY = t.clientY;
-  }, { passive: true });
-
-  viewport.addEventListener('touchend', function (e) {
-    touching = false;
-    holdUntil = now() + HOLD_MS;
-    var t = e.changedTouches && e.changedTouches[0];
-    if (!t) return;
-    var dx = t.clientX - startX;
-    var dy = t.clientY - startY;
-    if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy)) go(index + (dx < 0 ? 1 : -1));
-  }, { passive: true });
-
-  viewport.addEventListener('touchcancel', function () {
-    touching = false;
-    holdUntil = now() + HOLD_MS;
-  }, { passive: true });
-
-  // Вкладка скрыта: не листаем. Вернулись: отсчёт заново
-  document.addEventListener('visibilitychange', function () {
-    hiddenNow = document.hidden;
-    last = 0;
-    acc = 0;
-  });
-
-  /* ---------- Запуск ---------- */
-  fetch('assets/promo.json', { headers: { Accept: 'application/json' } }).then(function (res) {
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return res.json();
-  }).then(function (data) {
-    build(data);
-    if (!slides.length) return;
-    show(0);
-    timer = setInterval(tick, TICK_MS);
-  }).catch(function () {
-    section.hidden = true;
-  });
-
-  // Уход со страницы: останавливаем таймер
-  window.addEventListener('pagehide', function () {
-    clearInterval(timer);
-    timer = 0;
-  });
+  // Если все карточки помещаются в ширину (компьютер), точки не нужны
+  function syncDots() { dotsBox.hidden = !scrollable(); }
+  syncDots();
+  window.addEventListener('resize', syncDots);
+  mark(0);
+  timer = setInterval(tick, 200);
+  window.addEventListener('pagehide', function () { clearInterval(timer); timer = 0; });
 })();

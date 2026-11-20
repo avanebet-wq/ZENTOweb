@@ -1,53 +1,45 @@
-/* ===== Полоса карточек: акции, новости, новинки (главная) ===== */
-
+/* ===== Новости на главной: карточки в ряд (рулетка, Telegram-бот, приложение) ===== */
 .promo { padding-top: 26px; }
-.promo-head {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-  gap: 8px 12px; margin-bottom: 10px;
-}
-.promo-heading { margin: 0; }
+.promo-heading { margin: 0 0 12px; font-size: 22px; line-height: 28px; font-weight: 700; }
 
-/* Нижний отступ нужен, чтобы тень карточек не обрезалась */
-/* overflow-x: clip режет сдвинутые (неактивные) слайды по ширине, не трогая тень снизу */
-.promo-viewport { position: relative; padding: 4px 0 52px; border-radius: 28px; overflow-x: clip; }
-.promo-viewport:focus-visible { outline: 3px solid var(--ring); outline-offset: 4px; }
-
-/* Все слайды лежат в одной ячейке: переход — opacity и transform */
-.promo-track { display: grid; }
-.promo-slide {
-  grid-area: 1 / 1; position: relative; z-index: 0; min-width: 0;
-  opacity: 0; visibility: hidden; transform: translate3d(18px, 0, 0);
-  transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out), visibility 0s linear 600ms;
+/* Ряд листается пальцем; карточки «прилипают» к краю */
+.promo-row {
+  display: flex; gap: 14px; margin: 0 -16px; padding: 4px 16px 18px;
+  overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 16px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
 }
-.promo-slide.is-active {
-  opacity: 1; visibility: visible; transform: none;
-  transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out), visibility 0s;
-}
+.promo-row::-webkit-scrollbar { display: none; }
+.promo-row:focus-visible { outline: 3px solid var(--ring); outline-offset: -3px; border-radius: 28px; }
 
 .promo-card {
-  position: relative; height: 100%; margin: 0; padding: 20px 20px 22px;
-  border-radius: 24px; border: 0;
+  position: relative; flex: 0 0 min(78vw, 300px); display: flex; flex-direction: column;
+  margin: 0; padding: 12px 12px 14px; border-radius: 28px; scroll-snap-align: start;
   background: var(--glass-sheen), var(--glass-tint); color: var(--label);
-  box-shadow: var(--glass-rim-top), var(--glass-rim-edge);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-rim-top), var(--glass-rim-edge);
 }
-/* Тень — в псевдоэлементе под карточкой. Сама карточка не меняет box-shadow (на iOS это тормозит) */
-.promo-card::before {
-  content: ""; position: absolute; left: 14px; right: 14px; top: 10px; bottom: -12px;
-  z-index: -1; border-radius: 24px; pointer-events: none;
-  box-shadow: 0 30px 40px -16px rgba(0, 0, 0, 0.55), 0 14px 22px -12px rgba(0, 0, 0, 0.3);
+.promo-art {
+  position: relative; height: 168px; display: grid; place-items: center; overflow: hidden;
+  border-radius: 20px; background: rgba(7, 9, 18, 0.45); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
 }
-.promo-tag {
-  margin: 0 0 6px; font-size: 13px; font-weight: 600;
-  letter-spacing: 0.02em; text-transform: uppercase; color: var(--tint-text);
+.promo-art svg { width: 150px; height: 150px; }
+.promo-badge {
+  position: absolute; top: 10px; right: 10px; padding: 4px 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; color: #fff;
+  background: rgba(120, 120, 140, 0.35); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.3);
 }
-.promo-card-title { margin: 0; font-size: 22px; line-height: 28px; font-weight: 700; }
-.promo-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; }
-.promo-list li { padding-top: 12px; border-top: 0.5px solid var(--separator); }
-.promo-item-title { display: block; font-weight: 600; }
-.promo-item-text { display: block; margin-top: 2px; font-size: 15px; line-height: 1.35; color: var(--label-2); }
+.promo-tag { margin: 14px 4px 2px; font-size: 15px; font-weight: 500; color: var(--tint-text); }
+.promo-card-title { margin: 0 4px 4px; font-size: 22px; line-height: 1.2; font-weight: 700; }
+.promo-text { margin: 0 4px 14px; font-size: 15px; line-height: 1.35; color: var(--label-2); }
+/* Кнопки пока неактивны: только дизайн */
+.promo-btn {
+  margin-top: auto; display: grid; place-items: center; height: 50px; border: 0; border-radius: 14px;
+  font: 600 17px/1 var(--font); color: var(--label-2); background: var(--fill); cursor: default;
+}
 
 /* Точки-индикаторы: кнопка 44 px для касания, видимая точка внутри */
-.promo-dots { display: flex; justify-content: center; gap: 2px; margin-top: 4px; }
+.promo-dots { display: flex; justify-content: center; gap: 2px; margin-top: -4px; }
+.promo-dots:empty, .promo-dots[hidden] { display: none; }
 .promo-dot {
   position: relative; width: 44px; height: 44px; padding: 0;
   border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
@@ -55,17 +47,18 @@
 .promo-dot::before {
   content: ""; position: absolute; left: 50%; top: 50%;
   width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 999px;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.55);
   transition: width 300ms var(--ease-out), margin 300ms var(--ease-out), background-color 300ms;
 }
-.promo-dot[aria-current="true"]::before { width: 22px; margin-left: -11px; background: #FFFFFF; }
+.promo-dot[aria-current="true"]::before { width: 26px; margin-left: -13px; background: var(--tint); }
 .promo-dot:focus-visible { outline: 3px solid var(--ring); outline-offset: -4px; border-radius: 999px; }
 
-.promo-more { margin: 8px 0 0; text-align: center; }
-
 @media (min-width: 720px) {
-  .promo-card { padding: 24px 26px 26px; }
+  .promo-row { margin: 0; padding-left: 0; padding-right: 0; }
 }
-
-/* Доступность: неактивная точка видна лучше (контраст 3:1) */
-.promo-dot::before { background: rgba(255, 255, 255, 0.55); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .promo-card { background: #1C1D2A; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .promo-card { background: #1C1D2A; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
