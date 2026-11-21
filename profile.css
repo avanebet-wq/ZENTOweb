@@ -42,9 +42,28 @@ dialog.profile-screen[open] .profile-body { animation: pf-push 380ms var(--ease-
 .pf-loading p { margin: 0; }
 
 /* Аватар 112 px, под ним имя */
-.pf-hero { display: grid; justify-items: center; gap: 14px; text-align: center; }
+/* Шапка профиля: капли с фигурками летают вокруг аватара (drops.js). Две канвы: под аватаром и над ним */
+.pf-hero { position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 76px 0 26px; }
+.pf-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.pf-cv-back { z-index: 0; }
+.pf-cv-front { z-index: 4; }
+.pf-who { position: relative; z-index: 2; display: grid; justify-items: center; gap: 10px; margin-top: 10px; pointer-events: none; }
+.pf-rank { display: flex; justify-content: center; min-height: 28px; }
+.pf-links { position: relative; z-index: 3; display: flex; gap: 8px; justify-content: center; max-width: 100%; margin-top: 4px; }
+.pf-linkbtn {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; padding: 0 10px 0 11px;
+  border: 0; border-radius: 22px; color: var(--label); font: inherit; font-size: 15px;
+  background: rgba(255, 255, 255, 0.10); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 32px rgba(0, 0, 0, 0.35);
+  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.pf-linkbtn b { font-weight: 600; }
+.pf-linkbtn-n { color: var(--label-2); font-variant-numeric: tabular-nums; }
+.pf-linkbtn svg:first-child { flex: none; }
+.pf-linkbtn-chev { flex: none; color: rgba(235, 235, 245, 0.45); margin-left: -3px; }
+@media (max-width: 380px) { .pf-linkbtn { font-size: 14px; padding: 0 8px 0 9px; gap: 5px; } .pf-linkbtn svg:first-child { width: 18px; height: 18px; } }
 .pf-avatar {
-  position: relative; width: 112px; height: 112px; flex: 0 0 auto; padding: 0; overflow: visible;
+  position: relative; z-index: 2; width: clamp(132px, 44vw, 168px); height: clamp(132px, 44vw, 168px); flex: 0 0 auto; padding: 0; overflow: visible;
   border: 0; border-radius: 50%; cursor: pointer;
   background: linear-gradient(135deg, #3A64D8 0%, #7A5CD6 100%); color: #fff;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 0 3px rgba(255, 255, 255, 0.12);
@@ -55,7 +74,7 @@ dialog.profile-screen[open] .profile-body { animation: pf-push 380ms var(--ease-
 .pf-avatar .pf-view { border-radius: 50%; overflow: hidden; }
 .pf-view > .pf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; outline: 0; }
 .pf-avatar .pf-view > .pf-img { border-radius: 50%; }
-.pf-initials { font-family: var(--font-display); font-size: 40px; font-weight: 600; letter-spacing: 0.02em; line-height: 1; }
+.pf-initials { font-family: var(--font-display); font-size: 52px; font-weight: 600; letter-spacing: 0.02em; line-height: 1; }
 .pf-badge {
   position: absolute; right: -2px; bottom: 2px; width: 34px; height: 34px;
   display: grid; place-items: center; border-radius: 50%;
@@ -331,4 +350,5 @@ dialog.profile-screen[open] .profile-body { animation: pf-push 380ms var(--ease-
 .pf-medal:not(.is-earned) .pf-medal-art { opacity: 0.55; }
 @media (prefers-reduced-transparency: reduce) {
   .pf-pill { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .pf-linkbtn { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }

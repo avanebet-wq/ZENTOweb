@@ -67,6 +67,13 @@
     settings: $('pf-settings'),
     bannerErr: $('pf-banner-err'),
     gear: $('pf-gear'),
+    hero: $('pf-hero'),
+    cvBack: $('pf-cv-back'),
+    cvFront: $('pf-cv-front'),
+    who: $('pf-who'),
+    rank: $('pf-rank'),
+    friends: $('pf-friends'),
+    follows: $('pf-follows'),
     avatarGroup: $('pf-avatar-group'),
     name: $('pf-name'),
     id: $('pf-id'),
@@ -351,6 +358,7 @@
       del.textContent = 'Удалить ' + noun;
     }
     if (kind === 'avatar' && el.avatarGroup) el.avatarGroup.hidden = del.hidden;
+    if (kind === 'avatar' && window.ZentoDrops) window.ZentoDrops.refreshAvatar();
   }
 
   function renderFoot() {
@@ -423,6 +431,38 @@
     el.id.textContent = st.base.public_id || '—';
     el.at.textContent = st.base.nick || '—';
     el.since.textContent = sinceText(st.base.created);
+    renderRank();
+  }
+
+  // Значок статуса: такой же, как на главной (greet.css). Три высших ранга с иконкой
+  var RANK_ICONS = {
+    13: 'M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z',
+    14: 'M12 2l9 10-9 10-9-10z',
+    15: 'M3 18h18v3H3zM3 8l4.5 4L12 4l4.5 8L21 8l-2 9H5z'
+  };
+  function renderRank() {
+    var r = st.base && st.base.rank;
+    if (!el.rank) return;
+    el.rank.replaceChildren();
+    var level = r ? parseInt(r.level, 10) : 0;
+    if (!(level >= 1 && level <= 15)) return;
+    var badge = document.createElement('span');
+    badge.className = 'rank-badge rank-badge--' + level;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', 'Статус: ' + String(r.name || ''));
+    var inner = document.createElement('span'); inner.className = 'rank-badge__inner';
+    var num = document.createElement('span'); num.className = 'rank-badge__num'; num.textContent = String(level);
+    var nm = document.createElement('span'); nm.className = 'rank-badge__name'; nm.textContent = String(r.name || '');
+    inner.appendChild(num); inner.appendChild(nm);
+    if (RANK_ICONS[level]) {
+      var ic = document.createElement('span'); ic.className = 'rank-badge__icon';
+      var NS = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'currentColor');
+      var path = document.createElementNS(NS, 'path'); path.setAttribute('d', RANK_ICONS[level]);
+      svg.appendChild(path); ic.appendChild(svg); inner.appendChild(ic);
+    }
+    badge.appendChild(inner);
+    el.rank.appendChild(badge);
   }
 
   // Какой экран показываем: loading | edit | settings | crop | done
@@ -438,6 +478,13 @@
     el.title.textContent = name === 'settings' ? 'Настройки' : 'Профиль';
     if (name !== 'edit') closeTip(false);
     renderFoot();
+    dropsOn(name === 'edit');
+  }
+
+  function dropsOn(on) {
+    if (!window.ZentoDrops) return;
+    if (on && dlg.open) { window.ZentoDrops.resize(); window.ZentoDrops.setActive(true); }
+    else window.ZentoDrops.setActive(false);
   }
 
   // Данные с сервера: base всегда; поля ввода — только при открытии (fill).
@@ -454,6 +501,7 @@
       banner_v: u.banner_v || 0,
       next: u.nick_next_change_at || null,
       public_id: u.public_id != null ? String(u.public_id) : (prev.public_id || ''),
+      rank: (u.rank && typeof u.rank === 'object') ? u.rank : (prev.rank || null),
       created: u.created_at ? String(u.created_at) : (prev.created || '')
     };
     if (Array.isArray(u.achievements)) {
@@ -898,6 +946,26 @@
     el.achEmpty.hidden = list.length > 0;
     el.achCount.textContent = list.length ? 'Получено ' + got + ' из ' + list.length : '';
     closeTip(false);
+    syncDrops();
+  }
+
+  // Полученные достижения летают вокруг аватара в каплях
+  function syncDrops() {
+    if (!window.ZentoDrops) return;
+    var figs = [];
+    (st.ach || []).forEach(function (a) {
+      var src = String(a.image_url || '');
+      if (!a.earned || !IMG_PATH_RE.test(src)) return;
+      var r = a.rarity || {};
+      figs.push({ src: src, name: String(a.title || 'Достижение'), rarity: String(r.name || ''), tier: r.tier, data: a });
+    });
+    window.ZentoDrops.setFigures(figs);
+  }
+
+  function medalButtonFor(a) {
+    var btns = el.achGrid.querySelectorAll('.pf-medal');
+    for (var i = 0; i < btns.length; i++) if (btns[i]._ach === a) return btns[i];
+    return null;
   }
 
   function tipOpen() { return !!st.tipFor && el.tip.open; }
@@ -988,6 +1056,7 @@
   });
 
   dlg.addEventListener('close', function () {
+    dropsOn(false);
     var back = st.opener;
     var saved = st.saved;
     reset();
@@ -1020,6 +1089,14 @@
   el.banner.addEventListener('click', function () { pickPhoto('banner'); });
   // На странице каталога нет части разметки (кнопки-действия, достижения, файл): проверяем, что элемент есть
   el.gear.addEventListener('click', openSettings);
+  el.friends.addEventListener('click', function () { toast('Друзья появятся позже'); });
+  el.follows.addEventListener('click', function () { toast('Подписки появятся позже'); });
+  if (window.ZentoDrops && el.hero) {
+    window.ZentoDrops.mount({
+      hero: el.hero, back: el.cvBack, front: el.cvFront, avatar: el.avatar, who: el.who,
+      onPick: function (a) { var btn = medalButtonFor(a); if (btn) openTip(btn); }
+    });
+  }
   if (el.achGrid) el.achGrid.addEventListener('click', onMedalClick);
   if (el.tipClose) el.tipClose.addEventListener('click', function () { closeTip(true); });
   if (el.file) el.file.addEventListener('change', function () {

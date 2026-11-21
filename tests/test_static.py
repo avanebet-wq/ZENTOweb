@@ -89,5 +89,28 @@ class SoundHttpTest(unittest.TestCase):
         self.assertEqual(body, self.sound_bytes)
 
 
+
+class ProfileDropsFilesTest(unittest.TestCase):
+    """Профиль с каплями: движок отдаётся как JavaScript, разметка шапки на месте в обеих страницах."""
+
+    def test_drops_js_is_served_as_javascript(self):
+        found = app.resolve_static(REPO, "/drops.js")
+        self.assertIsNotNone(found)
+        self.assertIn("javascript", found[1])
+
+    def test_both_pages_have_hero_markup_and_script_order(self):
+        for page in ("index.html", "catalog.html"):
+            html = (REPO / page).read_text(encoding="utf-8")
+            for marker in ('id="pf-hero"', 'id="pf-cv-back"', 'id="pf-cv-front"', 'id="pf-rank"',
+                           'id="pf-friends"', 'id="pf-follows"'):
+                self.assertIn(marker, html, f"{page}: нет {marker}")
+            self.assertLess(html.index('src="drops.js"'), html.index('src="profile.js"'), page)
+
+    def test_drops_js_has_no_external_loads(self):
+        code = (REPO / "drops.js").read_text(encoding="utf-8")
+        for bad in ("http://", "https://", "eval(", "innerHTML"):
+            self.assertNotIn(bad, code, bad)
+
+
 if __name__ == "__main__":
     unittest.main()
